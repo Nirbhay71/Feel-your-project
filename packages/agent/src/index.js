@@ -2,7 +2,7 @@
 //
 // GET /__feel/source?file=src/components/SalesChart.jsx&line=14
 //   → {
-//       file, component, language,
+//       file, absPath, component, language,
 //       code,            full file contents
 //       startLine,       first line of the component (incl. "export default")
 //       endLine,         last line of the component
@@ -57,6 +57,7 @@ export function createSourceHandler({ root }) {
 
     send(res, 200, {
       file,
+      absPath: abs, // used by "Open in editor"
       language: LANGUAGES[ext],
       code,
       component: range?.component ?? null,

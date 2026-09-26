@@ -29,6 +29,12 @@ export default function feel() {
     apply: 'serve', // never runs in production builds
     enforce: 'pre', // see the raw JSX before React's own transform
 
+    // Pre-bundle Shiki (the panel's highlighter, a dependency of @feel/client)
+    // up front; otherwise Vite discovers it on first use and reloads the page.
+    config() {
+      return { optimizeDeps: { include: ['@feel/client > shiki'] } };
+    },
+
     configResolved(config) {
       root = config.root;
     },
