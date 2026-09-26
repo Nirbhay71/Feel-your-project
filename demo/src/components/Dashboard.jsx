@@ -2,6 +2,7 @@ import StatCard from './StatCard.jsx';
 import SalesChart from './SalesChart.jsx';
 import Notifications from './Notifications.jsx';
 import NewOrderButton from './NewOrderButton.jsx';
+import TopProducts from './TopProducts.jsx';
 import useApi from '../hooks/useApi.js';
 import { fetchStats } from '../api.js';
 
@@ -22,6 +23,9 @@ export default function Dashboard() {
       <section className="row">
         <SalesChart />
         <Notifications />
+      </section>
+      <section className="row single">
+        <TopProducts />
       </section>
     </main>
   );

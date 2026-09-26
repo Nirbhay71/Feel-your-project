@@ -73,7 +73,12 @@ async function frontendCalls(nodes) {
   // function they're in. Resolved by looking at that function's callers.
   let pending = [];
 
-  for (const node of nodes) {
+  // Calls made *for* you by a library: useSWR(key, fetcher) means SWR will
+  // call fetcher(key). Recorded as { target, args, siteNode, line, inner }
+  // and treated like a real call when resolving parameters below.
+  const virtualCalls = [];
+
+  const scan = async (node) => {
     // Collect first (traverse is synchronous), then check each call — axios
     // instances may need another file loaded.
     const calls = [];
@@ -83,11 +88,25 @@ async function frontendCalls(nodes) {
       },
     });
     for (const p of calls) {
+      const line = p.node.loc.start.line;
+      const swr = swrCall(p, node.fn);
+      if (swr) {
+        const target = swr.fetcher && resolveFetcher(swr.fetcher, node, nodes);
+        if (target) {
+          virtualCalls.push({ target, args: swr.key, siteNode: node, line, inner: innerName(p, node) });
+          if (target.inline) await scan(target); // its fetch() needs the inline fetcher as the "top" function
+        } else if (swr.key[0]?.str && !swr.fetcher) {
+          // No fetcher: a global one from <SWRConfig> — assume a GET of the key.
+          pending.push({ url: swr.key[0], method: 'GET', base: '', fnNode: node, sinkNode: node, siteNode: node, line, inner: innerName(p, node) });
+        }
+        continue;
+      }
       const sink = fetchSink(p, node.fn) ?? (await axiosInstanceSink(p, node));
       if (!sink) continue;
-      pending.push({ url: sink.url, method: sink.method, base: sink.base ?? '', fnNode: node, sinkNode: node, siteNode: node, line: p.node.loc.start.line, inner: innerName(p, node) });
+      pending.push({ url: sink.url, method: sink.method, base: sink.base ?? '', fnNode: node, sinkNode: node, siteNode: node, line, inner: innerName(p, node) });
     }
-  }
+  };
+  for (const node of nodes) await scan(node);
 
   // Resolve parameters up to 3 levels of wrappers: getJson(url) → fetchSales.
   for (let level = 0; level < 4 && pending.length; level++) {
@@ -113,10 +132,78 @@ async function frontendCalls(nodes) {
           },
         });
       }
+
+      // …and calls a library makes on your behalf (SWR calling the fetcher).
+      for (const v of virtualCalls) {
+        if (v.target !== item.fnNode) continue;
+        const url = item.url.param != null ? (v.args[item.url.param] ?? null) : item.url;
+        const method = typeof item.method === 'string' ? item.method : 'GET';
+        next.push({ url, method, base: item.base, fnNode: v.siteNode, sinkNode: item.sinkNode, siteNode: v.siteNode, line: v.line, inner: v.inner });
+      }
     }
     pending = next;
   }
   return results;
+}
+
+// --- SWR ------------------------------------------------------------------------
+
+// Which SWR hook does a default import from this module give you?
+const SWR_DEFAULTS = { swr: 'useSWR', 'swr/immutable': 'useSWRImmutable', 'swr/mutation': 'useSWRMutation' };
+const SWR_HOOKS = new Set(Object.values(SWR_DEFAULTS));
+
+// useSWR(key, fetcher?, options?) / useSWRImmutable / useSWRMutation
+// → { key: [values SWR passes to the fetcher], fetcher: path | null } or null.
+function swrCall(p, topFn) {
+  const callee = p.get('callee');
+  if (!callee.isIdentifier()) return null;
+  const binding = p.scope.getBinding(callee.node.name);
+  const source = binding?.kind === 'module' ? binding.path.parent.source.value : null;
+  if (!source || !/^swr(\/|$)/.test(source)) return null;
+  const hook = binding.path.isImportDefaultSpecifier() ? SWR_DEFAULTS[source] : binding.path.node.imported?.name;
+  if (!SWR_HOOKS.has(hook)) return null;
+
+  const [keyArg, fetcherArg] = p.get('arguments');
+  const key = swrKey(keyArg, topFn);
+  if (!key) return null; // key can't be known statically
+  const fetcher = fetcherArg?.isIdentifier() || fetcherArg?.isFunction() ? fetcherArg : null;
+  return { key, fetcher };
+}
+
+// SWR keys → the arguments SWR calls the fetcher with.
+//   '/api/x'                        → ['/api/x']
+//   ['/api/x', id]                  → ['/api/x', *]      (fetcher(...key))
+//   () => `/api/x/${id}`            → ['/api/x/*']
+//   id ? `/api/x/${id}` : null      → ['/api/x/*']      (conditional fetching)
+//   user && '/api/me'               → ['/api/me']
+function swrKey(p, topFn) {
+  if (!p?.node) return null;
+  if (p.isArrayExpression()) return p.get('elements').map((e) => evalString(e, topFn));
+  if (p.isArrowFunctionExpression() && !p.get('body').isBlockStatement()) return swrKey(p.get('body'), topFn);
+  if (p.isConditionalExpression()) return swrKey(p.get('consequent'), topFn) ?? swrKey(p.get('alternate'), topFn);
+  if (p.isLogicalExpression({ operator: '&&' })) return swrKey(p.get('right'), topFn);
+  if (p.isNullLiteral()) return null;
+  const value = evalString(p, topFn);
+  return value ? [value] : null;
+}
+
+// The fetcher passed to useSWR, as a node the resolver understands:
+//   useSWR(key, fetcher)            → the reachable node for `fetcher`
+//   useSWR(key, (url) => fetch(url)) → a node for the inline function
+//   const f = (url) => …; useSWR(key, f)   (declared inside the component) → same
+function resolveFetcher(arg, node, nodes) {
+  const inline = (fnPath) => ({ file: node.file, fn: fnPath, name: 'inline fetcher', parent: node, inline: true });
+  if (arg.isFunction()) return inline(arg);
+
+  const binding = arg.scope.getBinding(arg.node.name);
+  if (!binding) return null;
+  if (binding.kind === 'module') {
+    const t = importTarget(binding, node.file);
+    return t ? (nodes.find((n) => n.file === t.file && (n.name === t.name || (t.name === 'default' && n.fn.parentPath?.isExportDefaultDeclaration()))) ?? null) : null;
+  }
+  if (binding.scope.path.isProgram()) return nodes.find((n) => n.file === node.file && n.name === arg.node.name) ?? null;
+  const init = binding.path.isVariableDeclarator() ? binding.path.get('init') : null;
+  return init?.isFunction() ? inline(init) : null;
 }
 
 // fetch(url, options) / window.fetch / axios.get(url) / axios.post(url) /

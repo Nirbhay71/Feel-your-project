@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { mutate } from 'swr';
 import { placeOrder, notifyDataChanged } from '../api.js';
 
 export default function NewOrderButton() {
@@ -7,7 +8,9 @@ export default function NewOrderButton() {
     mutationFn: placeOrder,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales'] }); // React Query data
-      notifyDataChanged(); // everything else
+      mutate('/api/notifications'); // SWR data
+      mutate('/api/products/top');
+      notifyDataChanged(); // useApi data
     },
   });
 

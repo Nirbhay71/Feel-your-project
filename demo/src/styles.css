@@ -47,6 +47,28 @@ body {
   margin-top: 16px;
 }
 
+.row.single {
+  grid-template-columns: 1fr;
+}
+
+.top-products table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.top-products th,
+.top-products td {
+  text-align: left;
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid #eceef2;
+}
+
+.top-products th {
+  color: #6b7080;
+  font-weight: 500;
+}
+
 .card {
   background: #fff;
   border-radius: 10px;

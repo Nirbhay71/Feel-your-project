@@ -220,7 +220,7 @@ async function renderFlow() {
   const groups = new Map();
   for (const req of getRequests()) {
     const owned = ownedFrames(req, entry, reach);
-    if (!owned) continue;
+    if (!owned || !matchesStatic(req, owned, possible)) continue;
     const key = `${req.method} ${req.url} ${req.frames.map((f) => `${f.file}:${f.line}`).join()}`;
     const prev = groups.get(key);
     groups.set(key, { req, owned, count: (prev?.count ?? 0) + 1 });
@@ -449,7 +449,21 @@ function ownedFrames(req, entry, reach) {
     }
   }
   const last = owned[owned.length - 1];
-  return last && reach.direct.has(`${last.file}#${last.top}`) ? owned : null;
+  if (!last || !reach.direct.has(`${last.file}#${last.top}`)) return null;
+  owned.byReference = true; // the component isn't on the stack — see matchesStatic
+  return owned;
+}
+
+// A shared function (an SWR `fetcher`, a generic `request()` helper) is
+// referenced by many components, so "reachable + directly referenced" alone
+// would give every one of them every request through it. When the static
+// analysis knows which URLs *this* component fetches through that function,
+// the request must be one of them.
+function matchesStatic(req, owned, possible) {
+  if (!owned.byReference) return true; // component on the stack — certain
+  const via = owned[owned.length - 1].top;
+  const related = possible.filter((c) => c.chain.some((n) => n.fn === via));
+  return !related.length || related.some((c) => sameCall(req, c));
 }
 
 function renderRequest(req, count) {

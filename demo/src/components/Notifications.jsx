@@ -1,22 +1,13 @@
-import { useEffect, useState } from 'react';
+import useSWR from 'swr';
+import { fetcher } from '../lib/fetcher.js';
 
 export default function Notifications() {
-  const [items, setItems] = useState([]);
-
-  // Fetches directly in the component (no hook / api layer).
-  useEffect(() => {
-    const load = () =>
-      fetch('/api/notifications')
-        .then((res) => res.json())
-        .then(setItems);
-    load();
-    window.addEventListener('app:refresh', load);
-    return () => window.removeEventListener('app:refresh', load);
-  }, []);
+  // Same shared fetcher as TopProducts — only the key (URL) differs.
+  const { data: items = [], mutate } = useSWR('/api/notifications', fetcher);
 
   async function dismiss(id) {
     await fetch(`/api/notifications/${id}`, { method: 'DELETE' });
-    setItems((list) => list.filter((n) => n.id !== id));
+    mutate();
   }
 
   return (
