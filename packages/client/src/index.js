@@ -11,6 +11,7 @@
 // First: start recording API calls before the app makes any.
 import { getRequests } from './network.js';
 import { showPanel, hidePanel, isInPanel } from './panel.js';
+import { buildFiberChain } from './fiber.js';
 
 const ATTR = 'data-src';
 
@@ -50,6 +51,7 @@ function parseSrc(value) {
   return { file, line: Number(line), column: Number(column), component };
 }
 
+// Fallback chain from the DOM alone (used when React's fiber tree isn't available).
 // Walk from the clicked element up to <html>, collecting one entry per component.
 // Consecutive elements from the same component collapse into one entry — we keep
 // the innermost one, since it's closest to what was clicked.
@@ -88,11 +90,14 @@ function focus(el) {
   placeBox(selectedBox, el);
 }
 
-function select(el) {
+async function select(el) {
   focus(el);
   placeBox(hoverBox, null);
 
-  const chain = buildChain(el);
+  // Prefer React's component tree (exact usage lines, see fiber.js); fall
+  // back to the DOM-only chain if this isn't React or something goes wrong.
+  const chain = (await buildFiberChain(el).catch(() => null)) ?? buildChain(el);
+  if (selectedEl !== el) return; // another element was selected meanwhile
   showPanel(chain, (entry) => focus(entry.element));
 
   // Handy for poking around in DevTools.

@@ -36,6 +36,14 @@ async function record(entry) {
   listeners.forEach((fn) => fn());
 }
 
+// Resolve any stack trace to original file/line/function (cached by text).
+// Also used for React's fiber._debugStack (see fiber.js).
+const stackCache = new Map(); // stack text → Promise<frames>
+export function resolveStack(stack) {
+  if (!stackCache.has(stack)) stackCache.set(stack, agentPost('stack', { stack }).then((r) => r.frames ?? []));
+  return stackCache.get(stack);
+}
+
 const sqlCache = new Map(); // sql → Promise<tables>
 function tablesFor(sql) {
   if (!sqlCache.has(sql)) sqlCache.set(sql, agentPost('sql', { sql }).then((r) => r.tables ?? []));
