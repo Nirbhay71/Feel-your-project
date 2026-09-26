@@ -1,9 +1,10 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import useApi from '../hooks/useApi.js';
+import { useQuery } from '@tanstack/react-query';
 import { fetchSales } from '../api.js';
 
 export default function SalesChart() {
-  const data = useApi(fetchSales) ?? [];
+  // React Query calls fetchSales from its own scheduler, not from here.
+  const { data = [] } = useQuery({ queryKey: ['sales'], queryFn: fetchSales });
 
   return (
     <div className="card chart">

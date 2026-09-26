@@ -51,6 +51,19 @@ export function buildGraph({ entry, requests, possible = [], tableInfo }) {
     // Frontend: outermost → innermost. The component's own frame is the root.
     let prev = root;
     let depth = 0;
+
+    // A library ran the code on the component's behalf (React Query calling
+    // a queryFn): component → [library] → your function. It's the marker just
+    // outside the frames the component owns.
+    const lib = req.frames?.[frames.length]?.lib;
+    const componentOnStack = frames.some((f) => f.file === entry.file && f.component === entry.component);
+    if (lib && !componentOnStack) {
+      const n = node(`lib:${lib}`, { kind: 'frontend', lib: true, label: lib, sub: 'called your code' });
+      n.depth = Math.max(n.depth, ++depth);
+      edge(prev, n);
+      prev = n;
+    }
+
     for (const f of [...frames].reverse()) {
       if (f.file === entry.file && f.fn === entry.component) continue;
       const n = node(`fe:${f.file}#${f.fn ?? f.line}`, {
@@ -279,14 +292,14 @@ export function renderGraph(model, { onSelect, activeKey }) {
   // Nodes
   const nodeEls = [];
   for (const n of model.nodes.values()) {
-    const kindClass = n.kind === 'table' && n.write ? 'table write' : n.kind;
+    const kindClass = n.kind === 'table' && n.write ? 'table write' : n.lib ? 'frontend lib' : n.kind;
     const div = el(
       'div',
       {
         className: `gnode ${kindClass}${n.static ? ' static-node' : ''}${n.changed ? ' changed' : ''}${n.error ? ' error' : ''}${n.key === activeKey ? ' active' : ''}`,
         title: `${n.label}\n${n.sub ?? ''}`,
       },
-      el('div', { className: 'k', textContent: KIND_LABEL[n.kind] }),
+      el('div', { className: 'k', textContent: n.lib ? 'Library' : KIND_LABEL[n.kind] }),
       el('div', { className: 'l', textContent: n.label }),
       el('div', { className: 's', textContent: n.sub ?? '' }),
     );
@@ -349,6 +362,7 @@ export const GRAPH_CSS = `
   .gnode .s { font-size: 10.5px; line-height: 14px; color: #6a737d; }
   .gnode.component { --c: #e5484d; }
   .gnode.frontend  { --c: #b392f0; }
+  .gnode.lib       { --c: #6a737d; cursor: default; }
   .gnode.route     { --c: #79b8ff; }
   .gnode.handler   { --c: #ffab70; }
   .gnode.query     { --c: #959da5; }

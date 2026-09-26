@@ -1,22 +1,19 @@
-import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { placeOrder, notifyDataChanged } from '../api.js';
 
 export default function NewOrderButton() {
-  const [busy, setBusy] = useState(false);
-
-  async function handleClick() {
-    setBusy(true);
-    try {
-      await placeOrder();
-      notifyDataChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
+  const queryClient = useQueryClient();
+  const order = useMutation({
+    mutationFn: placeOrder,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales'] }); // React Query data
+      notifyDataChanged(); // everything else
+    },
+  });
 
   return (
-    <button className="primary" onClick={handleClick} disabled={busy}>
-      {busy ? 'Placing…' : '+ New order'}
+    <button className="primary" onClick={() => order.mutate()} disabled={order.isPending}>
+      {order.isPending ? 'Placing…' : '+ New order'}
     </button>
   );
 }

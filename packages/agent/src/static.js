@@ -30,7 +30,7 @@ export async function possibleCalls({ abs, component, rootDir, display }) {
   if (!fn) return [];
 
   const nodes = await collectFunctions(abs, fn);
-  const calls = frontendCalls(nodes);
+  const calls = await frontendCalls(nodes);
   const routes = await backendRoutes(rootDir);
 
   const out = [];
@@ -66,7 +66,7 @@ const METHODS = ['get', 'post', 'put', 'patch', 'delete'];
 //   { param: 0 }                  "whatever the caller passes as argument 0"
 //   { param: 1, options: true }   (method) "the `method` of the options object passed as argument 1"
 //   null                          unknown
-function frontendCalls(nodes) {
+async function frontendCalls(nodes) {
   const results = [];
 
   // Pending: fetch() calls whose URL/method depend on a parameter of the
@@ -74,13 +74,19 @@ function frontendCalls(nodes) {
   let pending = [];
 
   for (const node of nodes) {
+    // Collect first (traverse is synchronous), then check each call — axios
+    // instances may need another file loaded.
+    const calls = [];
     node.fn.traverse({
       CallExpression(p) {
-        const sink = fetchSink(p, node.fn);
-        if (!sink) return;
-        pending.push({ url: sink.url, method: sink.method, fnNode: node, sinkNode: node, siteNode: node, line: p.node.loc.start.line, inner: innerName(p, node) });
+        calls.push(p);
       },
     });
+    for (const p of calls) {
+      const sink = fetchSink(p, node.fn) ?? (await axiosInstanceSink(p, node));
+      if (!sink) continue;
+      pending.push({ url: sink.url, method: sink.method, base: sink.base ?? '', fnNode: node, sinkNode: node, siteNode: node, line: p.node.loc.start.line, inner: innerName(p, node) });
+    }
   }
 
   // Resolve parameters up to 3 levels of wrappers: getJson(url) → fetchSales.
@@ -90,7 +96,7 @@ function frontendCalls(nodes) {
       const urlDone = item.url?.str != null;
       const methodDone = typeof item.method === 'string';
       if (urlDone && methodDone) {
-        results.push({ method: item.method, url: item.url.str, site: { file: item.siteNode.file, line: item.line }, siteNode: item.siteNode, sinkNode: item.sinkNode, inner: item.inner });
+        results.push({ method: item.method, url: joinUrl(item.base, item.url.str), site: { file: item.siteNode.file, line: item.line }, siteNode: item.siteNode, sinkNode: item.sinkNode, inner: item.inner });
         continue;
       }
       if (!item.url) continue; // URL can't be known statically
@@ -103,7 +109,7 @@ function frontendCalls(nodes) {
             const args = p.get('arguments');
             const url = item.url.param != null ? evalString(args[item.url.param], caller.fn) : item.url;
             const method = typeof item.method === 'string' ? item.method : methodFromArg(args[item.method.param], item.method.options, caller.fn);
-            next.push({ url, method: method ?? 'GET', fnNode: caller, sinkNode: item.sinkNode, siteNode: caller, line: p.node.loc.start.line, inner: innerName(p, caller) });
+            next.push({ url, method: method ?? 'GET', base: item.base, fnNode: caller, sinkNode: item.sinkNode, siteNode: caller, line: p.node.loc.start.line, inner: innerName(p, caller) });
           },
         });
       }
@@ -134,6 +140,100 @@ function fetchSink(p, topFn) {
   }
   if (axiosConfig) return { url: evalString(args[0], topFn), method: 'GET' };
   return null;
+}
+
+// Calls through an axios instance:
+//   const api = axios.create({ baseURL: '/api' })     (here or imported)
+//   api.get('/sales')   api.request({ url, method })   api({ url, method })
+// → a sink like fetchSink's, plus `base` ('/api') to prefix the URL with.
+async function axiosInstanceSink(p, node) {
+  const callee = p.get('callee');
+  let id = null;
+  let method = null;
+  if (callee.isMemberExpression() && callee.get('object').isIdentifier()) {
+    id = callee.get('object');
+    method = callee.node.property.name;
+    if (!METHODS.includes(method) && method !== 'request') return null;
+  } else if (callee.isIdentifier()) {
+    id = callee;
+  } else {
+    return null;
+  }
+  if (id.node.name === 'axios' || id.node.name === 'fetch') return null; // fetchSink handles these
+
+  const instance = await axiosInstance(id, node.file);
+  if (!instance) return null;
+
+  const args = p.get('arguments');
+  if (METHODS.includes(method)) {
+    return { url: evalString(args[0], node.fn), method: method.toUpperCase(), base: instance.base };
+  }
+  if (args[0]?.isObjectExpression()) {
+    return { url: evalString(propertyOf(args[0], 'url'), node.fn), method: methodFromArg(args[0], true, node.fn) ?? 'GET', base: instance.base };
+  }
+  return { url: evalString(args[0], node.fn), method: 'GET', base: instance.base };
+}
+
+// Is this identifier an axios instance? → { base } or null. Cached per binding.
+const instanceCache = new Map(); // "file#name" → Promise<{ base } | null>
+async function axiosInstance(id, file) {
+  const binding = id.scope.getBinding(id.node.name);
+  if (!binding) return null;
+
+  if (binding.kind === 'module') {
+    // import axios from 'axios' under another name counts as the default instance.
+    if (binding.path.parent.source.value === 'axios') return binding.path.isImportDefaultSpecifier() ? { base: '' } : null;
+    const target = importTarget(binding, file);
+    if (!target) return null;
+    const key = `${target.file}#${target.name}`;
+    if (!instanceCache.has(key)) {
+      instanceCache.set(
+        key,
+        loadFile(target.file)
+          .then(({ ast }) => (ast ? exportedInstance(ast, target.name) : null))
+          .catch(() => null),
+      );
+    }
+    return instanceCache.get(key);
+  }
+  return binding.path.isVariableDeclarator() ? instanceFromInit(binding.path.get('init')) : null;
+}
+
+// Find `name` (or the default export) in a file and check it's axios.create(...).
+function exportedInstance(ast, name) {
+  let result = null;
+  let alias = null;
+  traverse(ast, {
+    ExportDefaultDeclaration(p) {
+      if (name !== 'default') return;
+      const decl = p.get('declaration');
+      if (decl.isIdentifier()) alias = decl.node.name; // export default api;
+      else result = instanceFromInit(decl);
+      p.stop();
+    },
+    VariableDeclarator(p) {
+      if (name === 'default' || p.node.id.name !== name || p.scope.parent) return; // top-level only
+      result = instanceFromInit(p.get('init'));
+      p.stop();
+    },
+  });
+  return alias ? exportedInstance(ast, alias) : result;
+}
+
+// axios.create({ baseURL: '/api' }) → { base: '/api' }; anything else → null.
+function instanceFromInit(init) {
+  if (!init?.isCallExpression()) return null;
+  const c = init.node.callee;
+  if (c.type !== 'MemberExpression' || c.object.name !== 'axios' || c.property.name !== 'create') return null;
+  const config = init.get('arguments')[0];
+  const base = config?.isObjectExpression() ? evalString(propertyOf(config, 'baseURL'), null) : null;
+  return { base: base?.str ?? '' };
+}
+
+// "/api" + "/sales" → "/api/sales". Absolute URLs ignore the base, like axios.
+function joinUrl(base, url) {
+  if (!base || /^https?:\/\//.test(url)) return url;
+  return `${base.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
 }
 
 // The method, from either an options object ({ method: 'POST' }) or a string.
@@ -178,7 +278,7 @@ function evalString(p, topFn, depth = 0) {
 
 // If p is a parameter of the top-level function, its index; else null.
 function paramIndex(p, topFn) {
-  if (!p?.isIdentifier()) return null;
+  if (!topFn || !p?.isIdentifier()) return null;
   const binding = p.scope.getBinding(p.node.name);
   if (binding?.kind !== 'param' || binding.scope.block !== topFn.node) return null;
   const i = topFn.node.params.indexOf(binding.path.node);

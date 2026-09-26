@@ -10,6 +10,8 @@
     "db:reset": "docker compose down -v && docker compose up -d"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.104.0",
+    "axios": "^1.20.0",
     "express": "^5.1.0",
     "pg": "^8.13.0",
     "react": "^19.0.0",

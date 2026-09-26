@@ -18,15 +18,29 @@ const IGNORE = ['/node_modules/', '/@vite/', '/@feel/', '/@react-refresh', '/@id
 
 const traceMaps = new WeakMap(); // sourcemap object → TraceMap
 
+// Libraries that call into *everyone's* code — not worth pointing out.
+const BORING_LIBS = /^(react|react-dom|scheduler)(\/|$)/;
+
 // getModule(url) → { file, map } from Vite's module graph.
+//
+// Returns your frames, innermost first. Where a library sits between your
+// frames — or called your outermost one — a marker is inserted:
+//   [fetchSales, { lib: '@tanstack/react-query' }, onSuccess (NewOrderButton), …]
+// so the panel can show "NewOrderButton ⇢ @tanstack/react-query ⇢ fetchSales".
 export async function resolveStack(stack, { getModule, display }) {
   const frames = [];
+  let pendingLib = null; // library seen since the last frame of yours
 
   for (const text of String(stack).split('\n')) {
     const match = text.match(FRAME);
     if (!match) continue;
     const url = new URL(match[1]);
-    if (IGNORE.some((part) => url.pathname.includes(part))) continue;
+    if (IGNORE.some((part) => url.pathname.includes(part))) {
+      // Only libraries *outside* your code count (not axios inside fetchSales).
+      const lib = frames.length && !pendingLib ? libraryName(url.pathname) : null;
+      if (lib && !BORING_LIBS.test(lib)) pendingLib = lib;
+      continue;
+    }
 
     url.searchParams.delete('t'); // HMR timestamp
     const mod = await getModule(url.pathname + url.search);
@@ -49,6 +63,10 @@ export async function resolveStack(stack, { getModule, display }) {
     const named = fnPath && findNamedFunction(fnPath);
     const component = fnPath && findComponent(fnPath);
 
+    if (pendingLib) {
+      frames.push({ lib: pendingLib });
+      pendingLib = null;
+    }
     frames.push({
       file: display(mod.file),
       line,
@@ -59,7 +77,20 @@ export async function resolveStack(stack, { getModule, display }) {
     });
   }
 
+  if (pendingLib) frames.push({ lib: pendingLib });
   return frames;
+}
+
+// URL path of a library module → package name.
+//   /node_modules/.vite/deps/@tanstack_react-query.js  → @tanstack/react-query
+//   /node_modules/.vite/deps/react-dom_client.js       → react-dom/client
+//   /node_modules/axios/lib/core/Axios.js              → axios
+// Vite's shared "chunk-XXXX.js" files don't say which package they are → null.
+function libraryName(pathname) {
+  const deps = pathname.match(/\/\.vite\/deps\/([^/?]+)\.js$/);
+  if (deps) return deps[1].startsWith('chunk-') ? null : deps[1].replace('_', '/');
+  const direct = pathname.match(/\/node_modules\/((?:@[^/]+\/)?[^/]+)/);
+  return direct?.[1] ?? null;
 }
 
 // The outermost function around a path — the one declared at the top of the

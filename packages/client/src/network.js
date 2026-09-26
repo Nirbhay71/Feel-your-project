@@ -87,6 +87,17 @@ function parseRoute(header) {
   }
 }
 
+// A stack trace of who's calling right now. Chrome keeps only 10 frames by
+// default, and HTTP libraries use most of them (axios alone takes ~8), which
+// would cut off your code — so capture up to 50 frames.
+function captureStack() {
+  const limit = Error.stackTraceLimit;
+  Error.stackTraceLimit = 50;
+  const stack = new Error().stack;
+  Error.stackTraceLimit = limit;
+  return stack;
+}
+
 // Our own calls (agent, open-in-editor) aren't the app's traffic.
 const isOwnRequest = (url) => url.includes(`${AGENT}/`) || url.includes('/__open-in-editor');
 
@@ -96,7 +107,7 @@ window.fetch = async function (input, init) {
   if (isOwnRequest(url)) return originalFetch.apply(this, arguments);
 
   const method = (init?.method ?? input?.method ?? 'GET').toUpperCase();
-  const stack = new Error().stack; // who called fetch — must be taken synchronously
+  const stack = captureStack(); // who called fetch — must be taken synchronously
   const start = performance.now();
 
   try {
@@ -127,7 +138,7 @@ XMLHttpRequest.prototype.open = function (method, url) {
 XMLHttpRequest.prototype.send = function () {
   const info = this.__feel;
   if (info && !isOwnRequest(info.url)) {
-    const stack = new Error().stack;
+    const stack = captureStack();
     const start = performance.now();
     this.addEventListener('loadend', () => {
       record({

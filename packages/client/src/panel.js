@@ -111,6 +111,7 @@ shadow.innerHTML = `
     .req.possible + .req.possible { border-top: 1px dashed #444d56; }
     .possible-head { margin: 12px 0 2px !important; }
     .static-tag { margin-left: 8px; font-size: 10px; padding: 0 6px; border-radius: 4px; border: 1px dashed #6a737d; color: #959da5; }
+    .hop .lib { font: 11.5px ui-monospace, monospace; color: #959da5; }
     .cause { font-size: 12px; }
     .cause button, .hop button.db { padding: 1px 7px; font: 12px ui-monospace, monospace; background: #2f363d; }
     .cause button.fe { color: #b392f0; }
@@ -463,9 +464,14 @@ function renderRequest(req, count) {
   );
 
   // Frontend: the stack, outermost first — e.g. useApi → fetchSales → getJson.
+  // A library that called your code (React Query, SWR, …) shows as "⇢ lib ⇢".
   const frontend = el('div', { className: 'hop' }, el('span', { className: 'tag', textContent: 'Frontend' }));
   [...req.frames].reverse().forEach((f, i) => {
-    if (i > 0) frontend.append(el('span', { className: 'muted', textContent: '→' }));
+    if (f.lib) {
+      frontend.append(el('span', { className: 'lib', textContent: `⇢ ${f.lib} ⇢`, title: `${f.lib} called your code` }));
+      return;
+    }
+    if (i > 0 && !req.frames[req.frames.length - i]?.lib) frontend.append(el('span', { className: 'muted', textContent: '→' }));
     frontend.append(
       el('button', {
         className: 'fe',

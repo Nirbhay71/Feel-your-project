@@ -41,12 +41,19 @@ function findEnclosing(p, accept) {
 export function functionName(fn) {
   if (fn.node.id?.name) return fn.node.id.name;
 
+  // { onSuccess() { … } }
+  if (fn.isObjectMethod() && fn.node.key.type === 'Identifier') return fn.node.key.name;
+
   // Climb through wrapper calls like memo(...) / forwardRef(...).
   let parent = fn.parentPath;
   while (parent?.isCallExpression()) parent = parent.parentPath;
 
   if (parent?.isVariableDeclarator() && parent.node.id.type === 'Identifier') {
     return parent.node.id.name;
+  }
+  // { onSuccess: () => { … } } — only directly, not through a wrapper call.
+  if (fn.parentPath.isObjectProperty() && fn.parentPath.node.value === fn.node && fn.parentPath.node.key.type === 'Identifier') {
+    return fn.parentPath.node.key.name;
   }
   return null;
 }
