@@ -5,8 +5,9 @@
 // Right before the response headers go out, everything collected for the
 // request — handlers + SQL queries (Layer 3) — is sent in one header:
 //
-//   X-Feel-Route: {"method":"GET","path":"/api/stats","handlers":[…],"queries":[…]}
+//   X-Feel-Route: {"id":"…","method":"GET","path":"/api/stats","handlers":[…],"queries":[…]}
 
+import { randomUUID } from 'node:crypto';
 import { als, callerSite } from './context.js';
 
 const HEADER = 'X-Feel-Route';
@@ -54,7 +55,8 @@ function wrap(handler, info) {
 function enter(req, res, info) {
   let ctx = req.__feel;
   if (!ctx) {
-    ctx = req.__feel = { method: req.method, path: null, handlers: [], queries: [] };
+    // id: links database changes back to this request (see pg.js).
+    ctx = req.__feel = { id: randomUUID(), method: req.method, path: null, handlers: [], queries: [] };
     hookHeaders(res, ctx);
   }
   ctx.path = req.baseUrl + (req.route?.path ?? '');

@@ -16,7 +16,7 @@
 //
 // Code comes from the agent (GET /__feel/source) and is highlighted with Shiki.
 
-import { getRequests, onRequestsChange } from './network.js';
+import { getRequests, onRequestsChange, findRequest } from './network.js';
 import { buildGraph, renderGraph, GRAPH_CSS } from './graph.js';
 
 const AGENT = '/__feel';
@@ -107,6 +107,10 @@ shadow.innerHTML = `
     .op.insert { color: #85e89d; }
     .op.update { color: #ffab70; }
     .op.delete { color: #f97583; }
+    .cause { font-size: 12px; }
+    .cause button, .hop button.db { padding: 1px 7px; font: 12px ui-monospace, monospace; background: #2f363d; }
+    .cause button.fe { color: #b392f0; }
+    .hop button.db .op { margin-right: 2px; }
     .audit-off { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 
     .code { flex: 1; overflow: auto; }
@@ -410,7 +414,32 @@ function renderRequest(req, count) {
 
   const rows = [head, frontend, backend];
   for (const q of req.backend?.queries ?? []) rows.push(renderQuery(q));
+  if (req.changes?.length) rows.push(renderRequestChanges(req.changes));
   return el('div', { className: 'req' }, ...rows);
+}
+
+// Changed: the exact rows this request inserted/updated/deleted (request → effect).
+//   Changed  [INSERT orders #42] [INSERT notifications #9]
+function renderRequestChanges(changes) {
+  const row = el('div', { className: 'hop' }, el('span', { className: 'tag', textContent: 'Changed' }));
+  for (const c of changes) {
+    const id = (c.row_data ?? c.old_data)?.id;
+    row.append(
+      el(
+        'button',
+        { className: 'db write', title: describeChange(c), onclick: () => showTable(c.table_name) },
+        el('span', { className: `op ${c.op.toLowerCase()}`, textContent: c.op }),
+        ` ${c.table_name}${id != null ? ` #${id}` : ''}`,
+      ),
+    );
+  }
+  return row;
+}
+
+// Where a request came from on the page: the innermost frame that sits in a
+// component — e.g. NewOrderButton's handleClick.
+function originOf(req) {
+  return req.frames?.find((f) => f.component) ?? null;
 }
 
 // Database: one row per SQL query the backend ran for this request.
@@ -541,10 +570,38 @@ function renderChanges(changes, showTableName) {
     );
     if (showTableName) line.append(tableLink(c.table_name));
     line.append(el('span', { className: 'mono', textContent: row.id != null ? `#${row.id}` : '' }));
+    line.append(renderCause(c));
     line.append(el('span', { className: 'diff', textContent: describeChange(c) }));
     list.append(line);
   }
   return list;
+}
+
+// Which request made a change (change → cause), and — if that request came
+// from this page — which component and function sent it.
+//   via POST /api/orders ← NewOrderButton.handleClick
+function renderCause(c) {
+  if (!c.request_label) return el('span', { className: 'muted', textContent: 'outside any request' });
+  const cause = el('span', { className: 'cause' }, el('span', { className: 'muted', textContent: 'via ' }), c.request_label);
+  const req = findRequest(c.request_id);
+  const origin = req && originOf(req);
+  if (origin) {
+    cause.append(
+      el('span', { className: 'muted', textContent: ' ← ' }),
+      el('button', {
+        className: 'fe',
+        textContent: origin.fn && origin.fn !== origin.component ? `${origin.component}.${origin.fn}` : origin.component,
+        title: `${origin.file}:${origin.line}`,
+        onclick: () => showCode({ file: origin.file, line: origin.line }),
+      }),
+    );
+  } else {
+    // Found but no component on the stack (e.g. typed in the console), or
+    // made elsewhere entirely (another tab, curl, a test).
+    const note = req ? ' (no component on the stack)' : ' (not from this page)';
+    cause.append(el('span', { className: 'muted', textContent: note }));
+  }
+  return cause;
 }
 
 // INSERT → the new row's values; UPDATE → only what changed; DELETE → the old row.

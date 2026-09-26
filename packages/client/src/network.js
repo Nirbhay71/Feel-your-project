@@ -33,8 +33,23 @@ async function record(entry) {
     ...queries.map(async (q) => (q.tables = await tablesFor(q.sql))),
   ]);
   entry.frames = frames ?? [];
+
+  // If the request wrote to the database, fetch exactly which rows it changed.
+  // (The response only arrives after its queries — and their triggers — ran.)
+  const wrote = queries.some((q) => q.tables?.some((t) => t.access === 'write'));
+  if (wrote && entry.backend.id) {
+    try {
+      const res = await originalFetch(`${AGENT}/db/changes?request=${encodeURIComponent(entry.backend.id)}`);
+      if (res.ok) entry.changes = (await res.json()).changes;
+    } catch {
+      // no database configured / agent unreachable — just skip
+    }
+  }
   listeners.forEach((fn) => fn());
 }
+
+// The browser request (if any) that a database change came from.
+export const findRequest = (requestId) => requests.find((r) => r.backend?.id === requestId);
 
 // Resolve any stack trace to original file/line/function (cached by text).
 // Also used for React's fiber._debugStack (see fiber.js).

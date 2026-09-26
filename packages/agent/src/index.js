@@ -10,6 +10,7 @@
 //        → every function that component can reach (static call graph)
 // POST /__feel/sql      { sql }            → tables it reads/writes (Layer 3)
 // GET  /__feel/db/table?name=…             → columns, keys, relations, recent changes
+// GET  /__feel/db/changes?request=…        → rows changed by one request
 // POST /__feel/db/audit                    → turn on change tracking (installs triggers)
 
 import path from 'node:path';
@@ -111,6 +112,12 @@ export function createAgent({ root, getModule, database }) {
       const table = await requireDb().getTable(q.get('name') ?? '');
       if (!table) throw new HttpError(404, `No table "${q.get('name')}" in the database`);
       return table;
+    },
+
+    async 'GET /db/changes'(q) {
+      const request = q.get('request');
+      if (!request) throw new HttpError(400, 'Missing ?request=');
+      return requireDb().changesForRequest(request);
     },
 
     async 'POST /db/audit'() {

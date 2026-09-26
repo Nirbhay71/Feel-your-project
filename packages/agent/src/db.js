@@ -21,8 +21,14 @@ export function createDb(connectionString) {
     return rowCount > 0;
   }
 
+  // Is change tracking on? If it was turned on by an older version (no
+  // request columns yet), upgrade our own feel_audit table + trigger function
+  // in place — once per agent run.
+  // (A shared promise, so parallel calls don't run the DDL twice at once.)
+  let upgrade = null;
   async function auditEnabled() {
     const { rows } = await pool.query(`SELECT to_regclass('${SCHEMA}.feel_audit') IS NOT NULL AS on`);
+    if (rows[0].on) await (upgrade ??= pool.query(AUDIT_SCHEMA));
     return rows[0].on;
   }
 
@@ -85,9 +91,11 @@ export function createDb(connectionString) {
     };
   }
 
+  const CHANGE_COLUMNS = 'id, table_name, op, row_data, old_data, changed_at, request_id, request_label';
+
   async function recentChanges(tables) {
     const { rows } = await pool.query(
-      `SELECT id, table_name, op, row_data, old_data, changed_at
+      `SELECT ${CHANGE_COLUMNS}
        FROM feel_audit WHERE table_name = ANY ($1)
        ORDER BY id DESC LIMIT ${RECENT}`,
       [tables],
@@ -95,27 +103,18 @@ export function createDb(connectionString) {
     return rows;
   }
 
+  // Every row a given request changed (request → effect).
+  async function changesForRequest(requestId) {
+    if (!(await auditEnabled())) return { audit: false, changes: [] };
+    const { rows } = await pool.query(`SELECT ${CHANGE_COLUMNS} FROM feel_audit WHERE request_id = $1 ORDER BY id`, [
+      requestId,
+    ]);
+    return { audit: true, changes: rows };
+  }
+
   // Install the audit table + one trigger per table in the schema.
   async function enableAudit() {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS feel_audit (
-        id         bigserial PRIMARY KEY,
-        table_name text        NOT NULL,
-        op         text        NOT NULL,          -- INSERT | UPDATE | DELETE
-        row_data   jsonb,                         -- the row after the change
-        old_data   jsonb,                         -- the row before the change
-        changed_at timestamptz NOT NULL DEFAULT now()
-      );
-
-      CREATE OR REPLACE FUNCTION feel_audit_fn() RETURNS trigger AS $$
-      BEGIN
-        INSERT INTO feel_audit (table_name, op, row_data, old_data)
-        VALUES (TG_TABLE_NAME, TG_OP,
-                CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE to_jsonb(NEW) END,
-                CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END);
-        RETURN NULL;
-      END $$ LANGUAGE plpgsql;
-    `);
+    await (upgrade = pool.query(AUDIT_SCHEMA));
 
     const { rows } = await pool.query(
       `SELECT table_name FROM information_schema.tables
@@ -133,8 +132,40 @@ export function createDb(connectionString) {
     return { tables: rows.map((r) => r.table_name) };
   }
 
-  return { getTable, enableAudit };
+  return { getTable, enableAudit, changesForRequest };
 }
+
+// The audit table and trigger function. Safe to run again: it upgrades an
+// older feel_audit (adds the request columns) and replaces the function.
+//
+// request_id / request_label come from the connection settings that
+// @feel/node sets before each query (see packages/node/src/pg.js). Changes
+// made outside a request (psql, migrations, cron) have them NULL.
+const AUDIT_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS feel_audit (
+    id         bigserial PRIMARY KEY,
+    table_name text        NOT NULL,
+    op         text        NOT NULL,          -- INSERT | UPDATE | DELETE
+    row_data   jsonb,                         -- the row after the change
+    old_data   jsonb,                         -- the row before the change
+    changed_at timestamptz NOT NULL DEFAULT now()
+  );
+  ALTER TABLE feel_audit
+    ADD COLUMN IF NOT EXISTS request_id    text,   -- which request made the change
+    ADD COLUMN IF NOT EXISTS request_label text;   -- e.g. "POST /api/orders"
+  CREATE INDEX IF NOT EXISTS feel_audit_request_id ON feel_audit (request_id);
+
+  CREATE OR REPLACE FUNCTION feel_audit_fn() RETURNS trigger AS $$
+  BEGIN
+    INSERT INTO feel_audit (table_name, op, row_data, old_data, request_id, request_label)
+    VALUES (TG_TABLE_NAME, TG_OP,
+            CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE to_jsonb(NEW) END,
+            CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END,
+            NULLIF(current_setting('feel.request_id', true), ''),
+            NULLIF(current_setting('feel.request_label', true), ''));
+    RETURN NULL;
+  END $$ LANGUAGE plpgsql;
+`;
 
 // "order" → "\"order\"" — safe to put in SQL as an identifier.
 function quoteIdent(name) {
