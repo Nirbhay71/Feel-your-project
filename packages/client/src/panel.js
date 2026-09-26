@@ -107,6 +107,10 @@ shadow.innerHTML = `
     .op.insert { color: #85e89d; }
     .op.update { color: #ffab70; }
     .op.delete { color: #f97583; }
+    .req.possible { border: 1px dashed #444d56; border-radius: 6px; padding: 6px 8px; margin-top: 6px; opacity: 0.85; }
+    .req.possible + .req.possible { border-top: 1px dashed #444d56; }
+    .possible-head { margin: 12px 0 2px !important; }
+    .static-tag { margin-left: 8px; font-size: 10px; padding: 0 6px; border-radius: 4px; border: 1px dashed #6a737d; color: #959da5; }
     .cause { font-size: 12px; }
     .cause button, .hop button.db { padding: 1px 7px; font: 12px ui-monospace, monospace; background: #2f363d; }
     .cause button.fe { color: #b392f0; }
@@ -208,7 +212,7 @@ function renderNav() {
 async function renderFlow() {
   const entry = current.chain[current.index];
   const token = (renderFlow.token = {});
-  const reach = await fetchReach(entry);
+  const [reach, possible] = await Promise.all([fetchReach(entry), fetchPossible(entry)]);
   if (renderFlow.token !== token || !current) return; // superseded meanwhile
 
   // Group identical calls (same method + url + call path) and keep the latest.
@@ -221,21 +225,99 @@ async function renderFlow() {
     groups.set(key, { req, owned, count: (prev?.count ?? 0) + 1 });
   }
 
+  // Static calls that haven't been seen at runtime yet.
+  const seen = [...groups.values()].map((g) => g.req);
+  const unseen = possible.filter((c) => !seen.some((req) => sameCall(req, c)));
+
   const graphMode = flowMode === 'graph';
   panel.classList.toggle('wide', graphMode);
   const content = [];
 
   current.applyZoom = null;
-  if (!groups.size) {
-    content.push(el('div', { className: 'empty', textContent: 'No API calls from this component yet.' }));
+  if (!groups.size && !unseen.length) {
+    content.push(el('div', { className: 'empty', textContent: 'No API calls from this component.' }));
   } else if (graphMode) {
-    content.push(await renderGraphView(entry, [...groups.values()]));
+    content.push(await renderGraphView(entry, [...groups.values()], unseen));
     if (renderFlow.token !== token || !current) return;
   } else {
+    if (!groups.size) content.push(el('div', { className: 'empty', textContent: 'No API calls seen yet.' }));
     for (const { req, count } of groups.values()) content.push(renderRequest(req, count));
+    if (unseen.length) {
+      content.push(
+        el(
+          'h4',
+          { className: 'possible-head' },
+          'POSSIBLE CALLS ',
+          el('span', { className: 'muted', textContent: '· found in the code, not seen yet' }),
+        ),
+      );
+      for (const c of unseen) content.push(renderPossible(c));
+    }
   }
 
   flowBox.replaceChildren(renderFlowHeader(), ...content);
+}
+
+// Is this runtime request the same call as a static one?
+// Same method, and the same backend route (or, without backend info, a URL
+// that fits the static pattern — "*" matches one path segment).
+function sameCall(req, call) {
+  if (req.method !== call.method) return false;
+  if (req.backend && call.route) return req.backend.path === call.route.path;
+  const path = new URL(req.url, location.href).pathname;
+  const pattern = new RegExp(`^${call.url.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]+')}$`);
+  return pattern.test(path);
+}
+
+// A static call, drawn like a runtime request but dashed.
+function renderPossible(c) {
+  const head = el(
+    'div',
+    { className: 'req-head' },
+    el('span', { className: 'method', textContent: c.method }),
+    ` ${c.url}`,
+    el('span', { className: 'static-tag', textContent: 'static' }),
+  );
+
+  const frontend = el('div', { className: 'hop' }, el('span', { className: 'tag', textContent: 'Frontend' }));
+  c.chain.forEach((n, i) => {
+    if (i > 0) frontend.append(el('span', { className: 'muted', textContent: '→' }));
+    frontend.append(el('button', { className: 'fe', textContent: n.fn, title: `${n.file}:${n.line}`, onclick: () => showCode({ file: n.file, line: n.line }) }));
+  });
+
+  const backend = el('div', { className: 'hop' }, el('span', { className: 'tag', textContent: 'Backend' }));
+  const rows = [head, frontend, backend];
+  if (c.route) {
+    const h = c.route.handler;
+    backend.append(
+      el('span', { textContent: `${c.route.method} ${c.route.path}` }),
+      el('span', { className: 'muted', textContent: '→' }),
+      el('button', {
+        className: 'be',
+        textContent: h.name ?? 'inline handler',
+        title: `${h.file}:${h.line}`,
+        onclick: () => showCode({ file: h.file, line: h.line }),
+      }),
+    );
+    for (const q of c.route.queries) rows.push(renderQuery({ ...q, duration: null, rowCount: null, static: true }));
+  } else {
+    backend.append(el('span', { className: 'muted', textContent: 'no matching route found in the project' }));
+  }
+  return el('div', { className: 'req possible' }, ...rows);
+}
+
+const possibleCache = new Map(); // "file#component" → { at, promise }
+function fetchPossible({ file, component }) {
+  const key = `${file}#${component}`;
+  const hit = possibleCache.get(key);
+  if (hit && Date.now() - hit.at < 5000) return hit.promise;
+  const q = new URLSearchParams({ file, component });
+  const promise = fetch(`${AGENT}/possible?${q}`)
+    .then((res) => (res.ok ? res.json() : { calls: [] }))
+    .then((body) => body.calls)
+    .catch(() => []);
+  possibleCache.set(key, { at: Date.now(), promise });
+  return promise;
 }
 
 // "DATA FLOW   [List] [Graph]"
@@ -266,9 +348,10 @@ try {
 
 // Graph mode: fetch table details (for related tables + recent changes),
 // build the graph and render it. Clicking a node opens its code or table.
-async function renderGraphView(entry, groups) {
+async function renderGraphView(entry, groups, possible) {
   const tables = new Set();
   for (const { req } of groups) for (const q of req.backend?.queries ?? []) for (const t of q.tables ?? []) tables.add(t.name);
+  for (const c of possible) for (const q of c.route?.queries ?? []) for (const t of q.tables) tables.add(t.name);
 
   const tableInfo = new Map();
   await Promise.all([...tables].map(async (name) => tableInfo.set(name, await fetchTableInfo(name))));
@@ -280,7 +363,7 @@ async function renderGraphView(entry, groups) {
   }
   await Promise.all([...related].filter((n) => !tableInfo.has(n)).map(async (name) => tableInfo.set(name, await fetchTableInfo(name))));
 
-  const model = buildGraph({ entry, requests: groups.map((g) => ({ req: g.req, frames: g.owned })), tableInfo });
+  const model = buildGraph({ entry, requests: groups.map((g) => ({ req: g.req, frames: g.owned })), possible, tableInfo });
   const graph = renderGraph(model, {
     activeKey: current.graphActive,
     onSelect: (n) => {
@@ -465,6 +548,7 @@ function renderQuery(q) {
       }),
     );
   }
+  if (q.static) return row; // not run yet — no timing to show
   const stats = q.error
     ? `error: ${q.error}`
     : `${q.duration == null ? '?' : Math.round(q.duration)} ms · ${q.rowCount ?? '?'} row${q.rowCount === 1 ? '' : 's'}`;

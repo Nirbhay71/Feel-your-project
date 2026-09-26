@@ -1,5 +1,7 @@
 // Graph view — the whole stack for one component as a left-to-right graph.
 //
+// Solid = seen at runtime; dashed = found statically, not called yet.
+//
 //   [SalesChart] → [useApi] → [fetchSales] → [getJson] → [GET /api/sales]
 //        → [inline handler] → [SELECT … sales.js:8] → [orders] ┄ [users]
 //                                                              ┄ [products]
@@ -21,8 +23,9 @@ const RECENT_MS = 10 * 60 * 1000; // a table "changed recently" = last 10 minute
 // --- Model ------------------------------------------------------------------
 
 // requests:  [{ req, frames }] — frames are the ones owned by the component, innermost first
+// possible:  static calls not seen at runtime (agent /possible) — drawn dashed
 // tableInfo: Map name → /db/table response (or null if unavailable)
-export function buildGraph({ entry, requests, tableInfo }) {
+export function buildGraph({ entry, requests, possible = [], tableInfo }) {
   const nodes = new Map();
   const edges = new Map();
 
@@ -99,6 +102,65 @@ export function buildGraph({ entry, requests, tableInfo }) {
         const tn = node(`table:${t.name}`, { kind: 'table', label: t.name, action: { table: t.name } });
         if (t.access === 'write') tn.write = true;
         edge(qn, tn, t.access);
+      }
+    }
+  }
+
+  // Static calls that haven't run yet. Nodes they share with runtime calls
+  // (same function, route, handler, query or table) are reused; new ones are
+  // marked static and drawn dashed, as are their edges.
+  const staticNode = (key, props) => {
+    const isNew = !nodes.has(key);
+    const n = node(key, props);
+    if (isNew) n.static = true;
+    return n;
+  };
+  for (const c of possible) {
+    let prev = root;
+    c.chain.forEach((f, i) => {
+      if (i === 0 && f.fn === entry.component) return; // the component itself
+      const n = staticNode(`fe:${f.file}#${f.fn}`, {
+        kind: 'frontend',
+        label: f.fn,
+        sub: `${short(f.file)}:${f.line}`,
+        action: { code: { file: f.file, line: f.line } },
+      });
+      n.depth = Math.max(n.depth, i);
+      edge(prev, n, 'static');
+      prev = n;
+    });
+
+    if (!c.route) {
+      const n = staticNode(`route:${c.method} ${c.url}`, { kind: 'route', label: `${c.method} ${c.url}`, sub: 'no matching route' });
+      edge(prev, n, 'static');
+      continue;
+    }
+    const r = c.route;
+    const route = staticNode(`route:${r.method} ${r.path}`, { kind: 'route', label: `${r.method} ${r.path}`, sub: 'not called yet' });
+    edge(prev, route, 'static');
+
+    const h = r.handler;
+    const handler = staticNode(`handler:${r.file}:${r.line}:${h.index}`, {
+      kind: 'handler',
+      label: h.name ?? 'inline handler',
+      sub: `${short(h.file)}:${h.line}`,
+      action: { code: { file: h.file, line: h.line } },
+    });
+    if (!route.action) route.action = handler.action;
+    edge(route, handler, 'static');
+
+    for (const q of r.queries) {
+      const qn = staticNode(`query:${q.file}:${q.line}`, {
+        kind: 'query',
+        label: q.sql.replace(/\s+/g, ' ').trim(),
+        sub: `${short(q.file)}:${q.line}`,
+        action: { code: { file: q.file, line: q.line } },
+      });
+      edge(handler, qn, 'static');
+      for (const t of q.tables) {
+        const tn = staticNode(`table:${t.name}`, { kind: 'table', label: t.name, action: { table: t.name } });
+        if (t.access === 'write') tn.write = true;
+        edge(qn, tn, t.access === 'write' ? 'static write' : 'static');
       }
     }
   }
@@ -221,7 +283,7 @@ export function renderGraph(model, { onSelect, activeKey }) {
     const div = el(
       'div',
       {
-        className: `gnode ${kindClass}${n.changed ? ' changed' : ''}${n.error ? ' error' : ''}${n.key === activeKey ? ' active' : ''}`,
+        className: `gnode ${kindClass}${n.static ? ' static-node' : ''}${n.changed ? ' changed' : ''}${n.error ? ' error' : ''}${n.key === activeKey ? ' active' : ''}`,
         title: `${n.label}\n${n.sub ?? ''}`,
       },
       el('div', { className: 'k', textContent: KIND_LABEL[n.kind] }),
@@ -271,6 +333,8 @@ export const GRAPH_CSS = `
   .edge { fill: none; stroke: #586069; stroke-width: 1.5; transition: opacity .15s; }
   .edge.write { stroke: #f97583; }
   .edge.fk { stroke: #6a737d; stroke-dasharray: 4 4; }
+  .edge.static { stroke-dasharray: 6 4; opacity: .7; }
+  .gnode.static-node { border-style: dashed; border-left-style: dashed; background: #2a3036; opacity: .8; }
   .arrowhead { fill: #586069; }
   .gnode {
     position: absolute; box-sizing: border-box; padding: 5px 8px;

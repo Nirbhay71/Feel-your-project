@@ -9,7 +9,8 @@
 //
 // The panel uses this to decide which API calls belong to a component when
 // the component itself isn't on the stack (e.g. the fetch ran inside a
-// custom hook's useEffect).
+// custom hook's useEffect). static.js uses collectFunctions() to look for
+// fetch() calls and SQL queries along the same graph.
 
 import { functionName, findTopLevelFunction } from './ast.js';
 import { loadFile, importTarget } from './files.js';
@@ -17,48 +18,66 @@ import { loadFile, importTarget } from './files.js';
 const MAX_DEPTH = 5;
 
 export async function reachableFunctions(abs, name, display) {
-  const functions = new Set();
-  const resolved = new Map(); // "file#requestedName" → display key ("default" → real name)
-  let rootTargets = [];
+  const loaded = await loadFile(abs).catch(() => null);
+  const fn = loaded?.ast && findTopLevelFunction(loaded.ast, name);
+  if (!fn) return { functions: [], direct: [] };
 
-  async function visit(file, fnName, depth) {
-    const key = `${file}#${fnName}`;
-    if (resolved.has(key)) return;
-    resolved.set(key, null);
+  const nodes = await collectFunctions(abs, fn);
+  const key = (n) => `${display(n.file)}#${n.name}`;
+  return {
+    functions: nodes.map(key),
+    direct: nodes.filter((n) => n.parent === nodes[0]).map(key),
+  };
+}
 
-    const loaded = await loadFile(file).catch(() => null);
-    if (!loaded?.ast) return;
-    const fn = findTopLevelFunction(loaded.ast, fnName);
-    if (!fn) return; // not a function (e.g. a data constant) — ignore
+// Breadth-first walk from one function through every function it references,
+// following imports. Returns [{ file, fn, name, parent }] — `parent` is the
+// function it was first reached from, so a path back to the start can be
+// rebuilt (shortest path, since it's breadth-first).
+// `fn` can be any function path, including an inline one like
+// router.get('/x', (req, res) => …).
+export async function collectFunctions(file, fn, maxDepth = MAX_DEPTH) {
+  const root = { file, fn, name: functionName(fn) ?? '(inline)', parent: null };
+  const nodes = [root];
+  const seen = new Set([`${file}#${root.name}`]);
+  const queue = [[root, maxDepth]];
 
-    const displayKey = `${display(file)}#${functionName(fn) ?? fnName}`;
-    resolved.set(key, displayKey);
-    functions.add(displayKey);
-    if (depth === 0) return;
-
-    // Every identifier used inside this function that points to another
-    // function: either imported, or declared at the top of this file.
-    const targets = [];
-    fn.traverse({
-      Identifier(p) {
-        if (!p.isReferencedIdentifier()) return;
-        const binding = p.scope.getBinding(p.node.name);
-        if (!binding) return;
-        if (binding.kind === 'module') {
-          const target = importTarget(binding, file);
-          if (target) targets.push(target);
-        } else if (binding.scope.path.isProgram()) {
-          targets.push({ file, name: p.node.name });
-        }
-      },
-    });
-    if (depth === MAX_DEPTH) rootTargets = targets;
-
-    for (const t of targets) await visit(t.file, t.name, depth - 1);
+  while (queue.length) {
+    const [node, depth] = queue.shift();
+    if (depth === 0) continue;
+    for (const t of referencedFunctions(node.fn, node.file)) {
+      const loaded = await loadFile(t.file).catch(() => null);
+      const target = loaded?.ast && findTopLevelFunction(loaded.ast, t.name);
+      if (!target) continue; // not a function (e.g. a data constant) — ignore
+      const name = functionName(target) ?? t.name;
+      const key = `${t.file}#${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const child = { file: t.file, fn: target, name, parent: node };
+      nodes.push(child);
+      queue.push([child, depth - 1]);
+    }
   }
+  return nodes;
+}
 
-  await visit(abs, name, MAX_DEPTH);
-
-  const direct = rootTargets.map((t) => resolved.get(`${t.file}#${t.name}`)).filter(Boolean);
-  return { functions: [...functions], direct };
+// Every identifier used inside a function that could point to another
+// function: either imported, or declared at the top of the same file.
+// Returns [{ file, name }] ("default" for default imports).
+export function referencedFunctions(fn, file) {
+  const targets = [];
+  fn.traverse({
+    Identifier(p) {
+      if (!p.isReferencedIdentifier()) return;
+      const binding = p.scope.getBinding(p.node.name);
+      if (!binding) return;
+      if (binding.kind === 'module') {
+        const target = importTarget(binding, file);
+        if (target) targets.push(target);
+      } else if (binding.scope.path.isProgram()) {
+        targets.push({ file, name: p.node.name });
+      }
+    },
+  });
+  return targets;
 }

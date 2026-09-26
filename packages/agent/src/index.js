@@ -8,6 +8,7 @@
 //        → browser stack trace mapped to original file/line/function/component
 // GET  /__feel/reach?file=…&component=…
 //        → every function that component can reach (static call graph)
+// GET  /__feel/possible?file=…&component=… → API calls it could make (static only)
 // POST /__feel/sql      { sql }            → tables it reads/writes (Layer 3)
 // GET  /__feel/db/table?name=…             → columns, keys, relations, recent changes
 // GET  /__feel/db/changes?request=…        → rows changed by one request
@@ -21,6 +22,7 @@ import { resolveStack } from './stack.js';
 import { resolveHandler } from './handler.js';
 import { tablesInSql } from './sql.js';
 import { createDb } from './db.js';
+import { possibleCalls } from './static.js';
 
 export { parseCode, traverse, findComponent, functionName } from './ast.js';
 
@@ -102,6 +104,13 @@ export function createAgent({ root, getModule, database }) {
       const component = q.get('component');
       if (!component) throw new HttpError(400, 'Missing ?component=');
       return reachableFunctions(abs, component, display);
+    },
+
+    async 'GET /possible'(q) {
+      const abs = safePath(q.get('file'));
+      const component = q.get('component');
+      if (!component) throw new HttpError(400, 'Missing ?component=');
+      return { calls: await possibleCalls({ abs, component, rootDir, display }) };
     },
 
     async 'POST /sql'(q, body) {

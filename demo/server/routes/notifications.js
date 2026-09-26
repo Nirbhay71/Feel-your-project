@@ -13,4 +13,9 @@ async function listNotifications(req, res) {
 
 router.get('/notifications', listNotifications);
 
+router.delete('/notifications/:id', async (req, res) => {
+  await pool.query('DELETE FROM notifications WHERE id = $1', [req.params.id]);
+  res.status(204).end();
+});
+
 export default router;

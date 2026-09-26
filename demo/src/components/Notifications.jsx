@@ -14,12 +14,22 @@ export default function Notifications() {
     return () => window.removeEventListener('app:refresh', load);
   }, []);
 
+  async function dismiss(id) {
+    await fetch(`/api/notifications/${id}`, { method: 'DELETE' });
+    setItems((list) => list.filter((n) => n.id !== id));
+  }
+
   return (
     <div className="card notifications">
       <h2>Notifications</h2>
       <ul>
         {items.map((n) => (
-          <li key={n.id}>{n.text}</li>
+          <li key={n.id}>
+            {n.text}
+            <button className="dismiss" onClick={() => dismiss(n.id)} title="Dismiss">
+              ×
+            </button>
+          </li>
         ))}
       </ul>
     </div>
