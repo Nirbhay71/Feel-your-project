@@ -7,16 +7,12 @@
 //   4. insert  data-src="src/File.jsx:42:5|Component"  with magic-string
 //
 // It also injects the browser script (Piece 2) that reads these attributes
-// on Alt + right-click.
+// on Alt + right-click, and mounts the agent (Piece 3) that serves source code.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse } from '@babel/parser';
-import _traverse from '@babel/traverse';
 import MagicString from 'magic-string';
-
-// @babel/traverse is CommonJS; under ESM the function sits on .default.
-const traverse = _traverse.default ?? _traverse;
+import { parseCode, traverse, findComponent, functionName, createSourceHandler, SOURCE_ROUTE } from '@feel/agent';
 
 const ATTR = 'data-src';
 const JSX_FILE = /\.(jsx|tsx)$/;
@@ -37,6 +33,11 @@ export default function feel() {
       root = config.root;
     },
 
+    // Mount the agent: GET /__feel/source?file=...&line=...
+    configureServer(server) {
+      server.middlewares.use(SOURCE_ROUTE, createSourceHandler({ root }));
+    },
+
     // Add <script type="module" src="/@feel/client"> to the page...
     transformIndexHtml() {
       return [{ tag: 'script', attrs: { type: 'module', src: CLIENT_URL }, injectTo: 'body' }];
@@ -52,10 +53,7 @@ export default function feel() {
       const file = id.split('?')[0];
       if (!JSX_FILE.test(file) || file.includes('node_modules')) return null;
 
-      const ast = parse(code, {
-        sourceType: 'module',
-        plugins: file.endsWith('.tsx') ? ['jsx', 'typescript'] : ['jsx'],
-      });
+      const ast = parseCode(code, file);
 
       // Path relative to the Vite root, always with forward slashes.
       const relFile = path.relative(root, file).split(path.sep).join('/');
@@ -68,7 +66,8 @@ export default function feel() {
           if (node.attributes.some((a) => a.name?.name === ATTR)) return;
 
           const { line, column } = node.loc.start;
-          const component = getComponentName(p) ?? path.basename(file).replace(JSX_FILE, '');
+          const fn = findComponent(p);
+          const component = fn ? functionName(fn) : path.basename(file).replace(JSX_FILE, '');
           const value = `${relFile}:${line}:${column + 1}|${component}`;
 
           // Insert right after the tag name:  <div|  →  <div data-src="…"
@@ -86,34 +85,6 @@ export default function feel() {
 // Components (<Chart>), member tags (<motion.div>) and namespaced tags are skipped.
 function isDomTag(name) {
   return name.type === 'JSXIdentifier' && /^[a-z]/.test(name.name);
-}
-
-// Walk up from the JSX tag to the nearest function that looks like a component:
-//   function Chart() {}            → "Chart"
-//   const Chart = () => {}         → "Chart"
-//   const Chart = memo(() => {})   → "Chart"
-// Lowercase or anonymous functions (e.g. a .map callback) are skipped.
-function getComponentName(p) {
-  let fn = p.getFunctionParent();
-  while (fn) {
-    const name = functionName(fn);
-    if (name && /^[A-Z]/.test(name)) return name;
-    fn = fn.getFunctionParent();
-  }
-  return null;
-}
-
-function functionName(fn) {
-  if (fn.node.id?.name) return fn.node.id.name;
-
-  // Climb through wrapper calls like memo(...) / forwardRef(...).
-  let parent = fn.parentPath;
-  while (parent?.isCallExpression()) parent = parent.parentPath;
-
-  if (parent?.isVariableDeclarator() && parent.node.id.type === 'Identifier') {
-    return parent.node.id.name;
-  }
-  return null;
 }
 
 function escapeAttr(value) {

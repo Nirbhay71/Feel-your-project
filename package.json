@@ -7,7 +7,6 @@
     "demo"
   ],
   "scripts": {
-    "demo": "npm run dev -w demo",
-    "agent": "npm run start -w @feel/agent"
+    "demo": "npm run dev -w demo"
   }
 }

@@ -9,7 +9,7 @@ frontend file/function/line → backend route/handler → database table.
 | ---------------------- | --------------------------------------------------------------- |
 | `packages/vite-plugin` | Piece 1 — tags every JSX element with `data-src` at build time  |
 | `packages/client`      | Piece 2 + 4 — right-click handler and viewer panel (in browser) |
-| `packages/agent`       | Piece 3 — local Node server that reads source files             |
+| `packages/agent`       | Piece 3 — Node side: serves source code (mounted in Vite dev)   |
 | `demo`                 | Sample React dashboard to test on                               |
 
 ## Run
