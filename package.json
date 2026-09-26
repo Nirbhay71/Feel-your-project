@@ -1,0 +1,13 @@
+{
+  "name": "feel",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "demo"
+  ],
+  "scripts": {
+    "demo": "npm run dev -w demo",
+    "agent": "npm run start -w @feel/agent"
+  }
+}
