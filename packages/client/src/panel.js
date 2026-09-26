@@ -17,6 +17,7 @@
 // Code comes from the agent (GET /__feel/source) and is highlighted with Shiki.
 
 import { getRequests, onRequestsChange } from './network.js';
+import { buildGraph, renderGraph, GRAPH_CSS } from './graph.js';
 
 const AGENT = '/__feel';
 
@@ -50,8 +51,21 @@ shadow.innerHTML = `
     nav button.active { background: #e5484d; color: #fff; }
     .sep { color: #6a737d; align-self: center; }
 
+    .panel.wide { width: min(1100px, 100vw); }
     .flow { max-height: 45%; overflow: auto; padding: 8px 16px 10px; border-bottom: 1px solid #3a4048; }
-    .flow h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.06em; color: #959da5; font-weight: 600; }
+    .panel.wide .flow { max-height: 58%; }
+    .flow-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .flow h4 { margin: 0; font-size: 11px; letter-spacing: 0.06em; color: #959da5; font-weight: 600; }
+    .toggle { display: flex; gap: 2px; background: #2f363d; border-radius: 6px; padding: 2px; }
+    .toggle button { padding: 2px 10px; font-size: 12px; background: transparent; color: #959da5; }
+    .toggle button.active { background: #444d56; color: #fff; }
+    .graph-scroll { overflow: auto; }
+    .graph-scaler { position: relative; }
+    .graph-scaler .graph { transform-origin: 0 0; }
+    .zoom { display: flex; align-items: center; gap: 4px; justify-content: flex-end; margin-bottom: 4px; }
+    .zoom button { padding: 1px 8px; font-size: 12px; background: #2f363d; }
+    .zoom-label { min-width: 38px; text-align: center; font-size: 11px; }
+    ${GRAPH_CSS}
     .flow .empty { color: #6a737d; }
     .req { padding: 6px 0; }
     .req + .req { border-top: 1px dashed #3a4048; }
@@ -136,7 +150,7 @@ const reachCache = new Map(); // "file#component" → { functions: Set, direct: 
 // Show the panel for a component chain, starting at the clicked component.
 // onFocus(entry) moves the red outline on the page.
 export function showPanel(chain, onFocus) {
-  current = { chain, onFocus, index: 0, shown: null };
+  current = { chain, onFocus, index: 0, shown: null, graphActive: null, graphZoom: 'fit' };
   panel.classList.add('open');
   selectEntry(chain.length - 1);
 }
@@ -189,28 +203,145 @@ function renderNav() {
 
 async function renderFlow() {
   const entry = current.chain[current.index];
+  const token = (renderFlow.token = {});
   const reach = await fetchReach(entry);
-  if (current?.chain[current.index] !== entry) return; // switched meanwhile
+  if (renderFlow.token !== token || !current) return; // superseded meanwhile
 
   // Group identical calls (same method + url + call path) and keep the latest.
   const groups = new Map();
   for (const req of getRequests()) {
-    if (!belongsTo(req, entry, reach)) continue;
+    const owned = ownedFrames(req, entry, reach);
+    if (!owned) continue;
     const key = `${req.method} ${req.url} ${req.frames.map((f) => `${f.file}:${f.line}`).join()}`;
     const prev = groups.get(key);
-    groups.set(key, { req, count: (prev?.count ?? 0) + 1 });
+    groups.set(key, { req, owned, count: (prev?.count ?? 0) + 1 });
   }
 
-  flowBox.replaceChildren(el('h4', { textContent: 'DATA FLOW' }));
+  const graphMode = flowMode === 'graph';
+  panel.classList.toggle('wide', graphMode);
+  const content = [];
+
+  current.applyZoom = null;
   if (!groups.size) {
-    flowBox.append(el('div', { className: 'empty', textContent: 'No API calls from this component yet.' }));
-    return;
+    content.push(el('div', { className: 'empty', textContent: 'No API calls from this component yet.' }));
+  } else if (graphMode) {
+    content.push(await renderGraphView(entry, [...groups.values()]));
+    if (renderFlow.token !== token || !current) return;
+  } else {
+    for (const { req, count } of groups.values()) content.push(renderRequest(req, count));
   }
-  for (const { req, count } of groups.values()) flowBox.append(renderRequest(req, count));
+
+  flowBox.replaceChildren(renderFlowHeader(), ...content);
 }
 
-// Does this request belong to the selected component?
-// Walk the stack from the fetch outwards (innermost first):
+// "DATA FLOW   [List] [Graph]"
+function renderFlowHeader() {
+  const toggle = (mode, label) =>
+    el('button', {
+      textContent: label,
+      className: flowMode === mode ? 'active' : '',
+      onclick: () => {
+        flowMode = mode;
+        try {
+          localStorage.setItem('feel:flowMode', mode);
+        } catch {
+          // storage blocked — the choice just won't be remembered
+        }
+        renderFlow();
+      },
+    });
+  return el('div', { className: 'flow-head' }, el('h4', { textContent: 'DATA FLOW' }), el('div', { className: 'toggle' }, toggle('list', 'List'), toggle('graph', 'Graph')));
+}
+
+let flowMode = 'list';
+try {
+  flowMode = localStorage.getItem('feel:flowMode') ?? 'list';
+} catch {
+  // storage blocked — default to list
+}
+
+// Graph mode: fetch table details (for related tables + recent changes),
+// build the graph and render it. Clicking a node opens its code or table.
+async function renderGraphView(entry, groups) {
+  const tables = new Set();
+  for (const { req } of groups) for (const q of req.backend?.queries ?? []) for (const t of q.tables ?? []) tables.add(t.name);
+
+  const tableInfo = new Map();
+  await Promise.all([...tables].map(async (name) => tableInfo.set(name, await fetchTableInfo(name))));
+  // One more hop, so related tables also show their row count / changes.
+  const related = new Set();
+  for (const info of tableInfo.values()) {
+    info?.references.forEach((f) => related.add(f.to_table));
+    info?.referencedBy.forEach((f) => related.add(f.from_table));
+  }
+  await Promise.all([...related].filter((n) => !tableInfo.has(n)).map(async (name) => tableInfo.set(name, await fetchTableInfo(name))));
+
+  const model = buildGraph({ entry, requests: groups.map((g) => ({ req: g.req, frames: g.owned })), tableInfo });
+  const graph = renderGraph(model, {
+    activeKey: current.graphActive,
+    onSelect: (n) => {
+      current.graphActive = n.key;
+      flowBox.querySelectorAll('.gnode.active').forEach((d) => d.classList.remove('active'));
+      flowBox.querySelector(`.gnode[data-key="${CSS.escape(n.key)}"]`)?.classList.add('active');
+      if (n.action.table) showTable(n.action.table);
+      else showCode(n.action.code);
+    },
+  });
+
+  // Zoom: the graph is drawn at full size and scaled with a CSS transform.
+  // The wrapper gets the scaled size, so scrollbars match what you see.
+  const scaler = el('div', { className: 'graph-scaler' }, graph);
+  const width = parseFloat(graph.style.width);
+  const height = parseFloat(graph.style.height);
+  const applyZoom = () => {
+    const available = flowBox.clientWidth - 32; // minus .flow padding
+    // "Fit" never goes below 70% — smaller than that is unreadable; scroll instead.
+    const scale = current.graphZoom === 'fit' ? Math.max(0.7, Math.min(1, available / width)) : current.graphZoom;
+    graph.style.transform = `scale(${scale})`;
+    scaler.style.width = `${width * scale}px`;
+    scaler.style.height = `${height * scale}px`;
+    zoomLabel.textContent = `${Math.round(scale * 100)}%`;
+    return scale;
+  };
+  const zoomBy = (step) => {
+    const scale = applyZoom();
+    current.graphZoom = Math.min(1.5, Math.max(0.3, Math.round((scale + step) * 10) / 10));
+    applyZoom();
+  };
+  const zoomLabel = el('span', { className: 'muted zoom-label' });
+  const controls = el(
+    'div',
+    { className: 'zoom' },
+    el('button', { textContent: '−', title: 'Zoom out', onclick: () => zoomBy(-0.1) }),
+    zoomLabel,
+    el('button', { textContent: '+', title: 'Zoom in', onclick: () => zoomBy(0.1) }),
+    el('button', { textContent: 'Fit', title: 'Fit to width', onclick: () => ((current.graphZoom = 'fit'), applyZoom()) }),
+  );
+  current.applyZoom = applyZoom; // re-run when the panel is resized (see below)
+  queueMicrotask(applyZoom);
+
+  return el('div', {}, controls, el('div', { className: 'graph-scroll' }, scaler));
+}
+
+// "Fit" depends on the panel's width, which changes with the window.
+new ResizeObserver(() => current?.applyZoom?.()).observe(flowBox);
+
+// Table details for the graph. Cached briefly so a burst of requests doesn't
+// refetch the same table over and over, but changes still show up quickly.
+const tableCache = new Map(); // name → { at, promise }
+function fetchTableInfo(name) {
+  const hit = tableCache.get(name);
+  if (hit && Date.now() - hit.at < 2000) return hit.promise;
+  const promise = fetch(`${AGENT}/db/table?name=${encodeURIComponent(name)}`)
+    .then((res) => (res.ok ? res.json() : null))
+    .catch(() => null);
+  tableCache.set(name, { at: Date.now(), promise });
+  return promise;
+}
+
+// Does this request belong to the selected component? Returns the frames
+// that are the component's part of the call (innermost first), or null.
+// Walk the stack from the fetch outwards:
 //   - every frame must be code the component can reach (static call graph)…
 //   - …until we hit the component's own code (runtime: it's on the stack) → yes
 //   - if we run out of reachable frames first, it's still ours when the last
@@ -218,15 +349,19 @@ async function renderFlow() {
 //     useApi, and useApi's effect made the request.
 // This stops at event boundaries too: a refetch triggered by NewOrderButton's
 // click has handleClick further out, but fetchSales isn't reachable from it.
-function belongsTo(req, entry, reach) {
-  if (!req.frames) return false; // stack not resolved yet
-  let last = null;
+function ownedFrames(req, entry, reach) {
+  if (!req.frames) return null; // stack not resolved yet
+  const owned = [];
   for (const f of req.frames) {
-    if (f.file === entry.file && f.component === entry.component) return true;
-    if (!f.top || !reach.functions.has(`${f.file}#${f.top}`)) break;
-    last = f;
+    owned.push(f);
+    if (f.file === entry.file && f.component === entry.component) return owned;
+    if (!f.top || !reach.functions.has(`${f.file}#${f.top}`)) {
+      owned.pop();
+      break;
+    }
   }
-  return !!last && reach.direct.has(`${last.file}#${last.top}`);
+  const last = owned[owned.length - 1];
+  return last && reach.direct.has(`${last.file}#${last.top}`) ? owned : null;
 }
 
 function renderRequest(req, count) {
