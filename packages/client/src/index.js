@@ -8,6 +8,8 @@
 //   4. fire a "feel:select" event for anything else that wants to listen
 // Esc, the panel's ✕, or a normal click on the page clears the selection.
 
+// First: start recording API calls before the app makes any.
+import { getRequests } from './network.js';
 import { showPanel, hidePanel, isInPanel } from './panel.js';
 
 const ATTR = 'data-src';
@@ -94,7 +96,7 @@ function select(el) {
   showPanel(chain, (entry) => focus(entry.element));
 
   // Handy for poking around in DevTools.
-  window.__feel = { element: el, chain };
+  window.__feel = { element: el, chain, requests: getRequests() };
   window.dispatchEvent(new CustomEvent('feel:select', { detail: { element: el, chain } }));
 }
 

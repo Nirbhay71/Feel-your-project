@@ -7,12 +7,13 @@
 //   4. insert  data-src="src/File.jsx:42:5|Component"  with magic-string
 //
 // It also injects the browser script (Piece 2) that reads these attributes
-// on Alt + right-click, and mounts the agent (Piece 3) that serves source code.
+// on Alt + right-click, and mounts the agent (Piece 3) that serves source code,
+// maps stack traces and builds the static call graph.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import MagicString from 'magic-string';
-import { parseCode, traverse, findComponent, functionName, createSourceHandler, SOURCE_ROUTE } from '@feel/agent';
+import { parseCode, traverse, findComponent, functionName, createAgent, AGENT_ROUTE } from '@feel/agent';
 
 const ATTR = 'data-src';
 const JSX_FILE = /\.(jsx|tsx)$/;
@@ -39,14 +40,20 @@ export default function feel() {
       root = config.root;
     },
 
-    // Mount the agent: GET /__feel/source?file=...&line=...
+    // Mount the agent at /__feel. It gets access to Vite's module graph so it
+    // can map browser stack traces back to original lines via sourcemaps.
     configureServer(server) {
-      server.middlewares.use(SOURCE_ROUTE, createSourceHandler({ root }));
+      const getModule = async (url) => {
+        const mod = await server.moduleGraph.getModuleByUrl(url);
+        return mod && { file: mod.file, map: mod.transformResult?.map };
+      };
+      server.middlewares.use(AGENT_ROUTE, createAgent({ root, getModule }));
     },
 
-    // Add <script type="module" src="/@feel/client"> to the page...
+    // Add <script type="module" src="/@feel/client"> at the very top of <head>,
+    // so it runs before the app and can wrap fetch before any request is made...
     transformIndexHtml() {
-      return [{ tag: 'script', attrs: { type: 'module', src: CLIENT_URL }, injectTo: 'body' }];
+      return [{ tag: 'script', attrs: { type: 'module', src: CLIENT_URL }, injectTo: 'head-prepend' }];
     },
 
     // ...and when the browser asks for that URL, serve the client file.

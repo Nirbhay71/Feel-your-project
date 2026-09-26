@@ -1,15 +1,19 @@
 import StatCard from './StatCard.jsx';
 import SalesChart from './SalesChart.jsx';
 import Notifications from './Notifications.jsx';
+import useApi from '../hooks/useApi.js';
+import { fetchStats } from '../api.js';
 
 export default function Dashboard() {
+  const stats = useApi(fetchStats);
+
   return (
     <main className="dashboard">
       <h1>Dashboard</h1>
       <section className="stats">
-        <StatCard label="Users" value="1,204" />
-        <StatCard label="Orders" value="312" />
-        <StatCard label="Revenue" value="$8,450" />
+        <StatCard label="Users" value={stats?.users.toLocaleString()} />
+        <StatCard label="Orders" value={stats?.orders.toLocaleString()} />
+        <StatCard label="Revenue" value={stats && `$${stats.revenue.toLocaleString()}`} />
       </section>
       <section className="row">
         <SalesChart />

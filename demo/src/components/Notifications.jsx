@@ -1,10 +1,15 @@
-const items = [
-  { id: 1, text: 'New order #312 placed' },
-  { id: 2, text: 'User jane@example.com signed up' },
-  { id: 3, text: 'Payment of $120 received' },
-];
+import { useEffect, useState } from 'react';
 
 export default function Notifications() {
+  const [items, setItems] = useState([]);
+
+  // Fetches directly in the component (no hook / api layer).
+  useEffect(() => {
+    fetch('/api/notifications')
+      .then((res) => res.json())
+      .then(setItems);
+  }, []);
+
   return (
     <div className="card notifications">
       <h2>Notifications</h2>

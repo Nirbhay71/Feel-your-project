@@ -1,15 +1,10 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-
-// Hardcoded for now; Layer 2 will replace this with a fetch to the backend.
-const data = [
-  { day: 'Mon', sales: 120 },
-  { day: 'Tue', sales: 180 },
-  { day: 'Wed', sales: 150 },
-  { day: 'Thu', sales: 220 },
-  { day: 'Fri', sales: 260 },
-];
+import useApi from '../hooks/useApi.js';
+import { fetchSales } from '../api.js';
 
 export default function SalesChart() {
+  const data = useApi(fetchSales) ?? [];
+
   return (
     <div className="card chart">
       <h2>Sales this week</h2>
