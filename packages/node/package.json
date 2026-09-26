@@ -1,0 +1,17 @@
+{
+  "name": "@feel/node",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./register": "./src/register.js"
+  },
+  "peerDependencies": {
+    "express": ">=4",
+    "pg": ">=8"
+  },
+  "peerDependenciesMeta": {
+    "express": { "optional": true },
+    "pg": { "optional": true }
+  }
+}

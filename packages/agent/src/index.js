@@ -8,6 +8,9 @@
 //        → browser stack trace mapped to original file/line/function/component
 // GET  /__feel/reach?file=…&component=…
 //        → every function that component can reach (static call graph)
+// POST /__feel/sql      { sql }            → tables it reads/writes (Layer 3)
+// GET  /__feel/db/table?name=…             → columns, keys, relations, recent changes
+// POST /__feel/db/audit                    → turn on change tracking (installs triggers)
 
 import path from 'node:path';
 import { functionAtLine, findComponent, findNamedFunction, functionName } from './ast.js';
@@ -15,6 +18,8 @@ import { loadFile } from './files.js';
 import { reachableFunctions } from './graph.js';
 import { resolveStack } from './stack.js';
 import { resolveHandler } from './handler.js';
+import { tablesInSql } from './sql.js';
+import { createDb } from './db.js';
 
 export { parseCode, traverse, findComponent, functionName } from './ast.js';
 
@@ -34,8 +39,14 @@ class HttpError extends Error {
 
 // root:      project folder; nothing outside it is ever read
 // getModule: url → { file, map } from Vite's module graph (for /stack)
-export function createAgent({ root, getModule }) {
+// database:  optional Postgres connection string (for /db/*)
+export function createAgent({ root, getModule, database }) {
   const rootDir = path.resolve(root);
+  const db = database ? createDb(database) : null;
+  const requireDb = () => {
+    if (!db) throw new HttpError(503, 'No database configured — pass feel({ database: url })');
+    return db;
+  };
 
   // Paths shown to the user: relative to the root, forward slashes.
   const display = (abs) => path.relative(rootDir, abs).split(path.sep).join('/');
@@ -89,7 +100,21 @@ export function createAgent({ root, getModule }) {
       const abs = safePath(q.get('file'));
       const component = q.get('component');
       if (!component) throw new HttpError(400, 'Missing ?component=');
-      return { functions: await reachableFunctions(abs, component, display) };
+      return reachableFunctions(abs, component, display);
+    },
+
+    async 'POST /sql'(q, body) {
+      return { tables: tablesInSql(String(body.sql ?? '')) };
+    },
+
+    async 'GET /db/table'(q) {
+      const table = await requireDb().getTable(q.get('name') ?? '');
+      if (!table) throw new HttpError(404, `No table "${q.get('name')}" in the database`);
+      return table;
+    },
+
+    async 'POST /db/audit'() {
+      return requireDb().enableAudit();
     },
   };
 

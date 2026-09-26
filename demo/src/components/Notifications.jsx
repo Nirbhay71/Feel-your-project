@@ -5,9 +5,13 @@ export default function Notifications() {
 
   // Fetches directly in the component (no hook / api layer).
   useEffect(() => {
-    fetch('/api/notifications')
-      .then((res) => res.json())
-      .then(setItems);
+    const load = () =>
+      fetch('/api/notifications')
+        .then((res) => res.json())
+        .then(setItems);
+    load();
+    window.addEventListener('app:refresh', load);
+    return () => window.removeEventListener('app:refresh', load);
   }, []);
 
   return (

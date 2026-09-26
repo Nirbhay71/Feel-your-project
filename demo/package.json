@@ -4,17 +4,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "node --watch server/index.js",
-    "build": "vite build"
+    "server": "node --env-file=.env --watch server/index.js",
+    "build": "vite build",
+    "db": "docker compose up -d",
+    "db:reset": "docker compose down -v && docker compose up -d"
   },
   "dependencies": {
     "express": "^5.1.0",
+    "pg": "^8.13.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.15.0"
   },
   "devDependencies": {
-    "@feel/express": "*",
+    "@feel/node": "*",
     "@feel/vite-plugin": "*",
     "@vitejs/plugin-react": "^5.0.0",
     "vite": "^7.0.0"

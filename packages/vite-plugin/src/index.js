@@ -22,7 +22,9 @@ const JSX_FILE = /\.(jsx|tsx)$/;
 const CLIENT_URL = '/@feel/client';
 const CLIENT_FILE = fileURLToPath(import.meta.resolve('@feel/client'));
 
-export default function feel() {
+// options.database: Postgres connection string, so the panel can show table
+// structure and changes (Layer 3). Optional.
+export default function feel(options = {}) {
   let root = process.cwd();
 
   return {
@@ -47,7 +49,7 @@ export default function feel() {
         const mod = await server.moduleGraph.getModuleByUrl(url);
         return mod && { file: mod.file, map: mod.transformResult?.map };
       };
-      server.middlewares.use(AGENT_ROUTE, createAgent({ root, getModule }));
+      server.middlewares.use(AGENT_ROUTE, createAgent({ root, getModule, database: options.database }));
     },
 
     // Add <script type="module" src="/@feel/client"> at the very top of <head>,

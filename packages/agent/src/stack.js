@@ -53,10 +53,20 @@ export async function resolveStack(stack, { getModule, display }) {
       file: display(mod.file),
       line,
       column,
-      fn: named ? functionName(named) : null,
+      fn: named ? functionName(named) : null, // innermost named, e.g. "load"
+      top: fnPath ? topLevelName(fnPath) : null, // its top-level function, e.g. "useApi"
       component: component ? functionName(component) : null,
     });
   }
 
   return frames;
+}
+
+// The outermost function around a path — the one declared at the top of the
+// file. `const load = () => …` inside useApi → "useApi". This is what the
+// static call graph knows about, so it's what we match on.
+function topLevelName(fnPath) {
+  let outer = fnPath;
+  while (outer.getFunctionParent()) outer = outer.getFunctionParent();
+  return functionName(outer);
 }

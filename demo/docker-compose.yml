@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: feel
+      POSTGRES_PASSWORD: feel
+      POSTGRES_DB: feel_demo
+    ports:
+      - "5433:5432" # 5433 on your machine, so it won't clash with a local Postgres
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro # runs once, on first start
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

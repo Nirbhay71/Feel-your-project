@@ -4,8 +4,8 @@
 // with:
 //   - a stack trace taken at the moment the request was made → which of your
 //     functions made it (the agent maps it back to original lines)
-//   - the X-Feel-Route response header set by @feel/express → which backend
-//     route and handler answered it
+//   - the X-Feel-Route response header set by @feel/node → which backend
+//     route and handler answered it, and which SQL queries it ran
 //
 // Must be imported before the app runs, so it's the first import of index.js
 // and the client script is injected at the top of <head>.
@@ -25,18 +25,34 @@ async function record(entry) {
   requests.push(entry);
   if (requests.length > MAX_REQUESTS) requests.shift();
 
-  // Ask the agent to turn the raw stack into file/line/function/component.
+  // Ask the agent to turn the raw stack into file/line/function/component,
+  // and which tables each SQL query touched (Layer 3).
+  const queries = entry.backend?.queries ?? [];
+  const [frames] = await Promise.all([
+    agentPost('stack', { stack: entry.stack }).then((r) => r.frames),
+    ...queries.map(async (q) => (q.tables = await tablesFor(q.sql))),
+  ]);
+  entry.frames = frames ?? [];
+  listeners.forEach((fn) => fn());
+}
+
+const sqlCache = new Map(); // sql → Promise<tables>
+function tablesFor(sql) {
+  if (!sqlCache.has(sql)) sqlCache.set(sql, agentPost('sql', { sql }).then((r) => r.tables ?? []));
+  return sqlCache.get(sql);
+}
+
+async function agentPost(route, body) {
   try {
-    const res = await originalFetch(`${AGENT}/stack`, {
+    const res = await originalFetch(`${AGENT}/${route}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stack: entry.stack }),
+      body: JSON.stringify(body),
     });
-    entry.frames = (await res.json()).frames ?? [];
+    return await res.json();
   } catch {
-    entry.frames = [];
+    return {};
   }
-  listeners.forEach((fn) => fn());
 }
 
 function parseRoute(header) {
