@@ -6,9 +6,11 @@
 //   3. for lowercase (real DOM) tags, find line:col and the enclosing component name
 //   4. insert  data-src="src/File.jsx:42:5|Component"  with magic-string
 //
-// The browser script (Piece 2) later reads these attributes on right-click.
+// It also injects the browser script (Piece 2) that reads these attributes
+// on Alt + right-click.
 
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parse } from '@babel/parser';
 import _traverse from '@babel/traverse';
 import MagicString from 'magic-string';
@@ -18,6 +20,10 @@ const traverse = _traverse.default ?? _traverse;
 
 const ATTR = 'data-src';
 const JSX_FILE = /\.(jsx|tsx)$/;
+
+// The browser script (Piece 2) is served under this URL.
+const CLIENT_URL = '/@feel/client';
+const CLIENT_FILE = fileURLToPath(import.meta.resolve('@feel/client'));
 
 export default function feel() {
   let root = process.cwd();
@@ -29,6 +35,16 @@ export default function feel() {
 
     configResolved(config) {
       root = config.root;
+    },
+
+    // Add <script type="module" src="/@feel/client"> to the page...
+    transformIndexHtml() {
+      return [{ tag: 'script', attrs: { type: 'module', src: CLIENT_URL }, injectTo: 'body' }];
+    },
+
+    // ...and when the browser asks for that URL, serve the client file.
+    resolveId(id) {
+      if (id === CLIENT_URL) return CLIENT_FILE;
     },
 
     transform(code, id) {
