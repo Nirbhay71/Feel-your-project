@@ -1,10 +1,17 @@
 {
   "name": "@feel/node",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Backend side of Feel: tells the browser which Express route, handler and SQL queries answered each request (dev only).",
+  "keywords": ["express", "pg", "postgres", "devtools", "tracing"],
+  "license": "UNLICENSED",
   "type": "module",
   "exports": {
     ".": "./src/index.js",
     "./register": "./src/register.js"
+  },
+  "files": ["src", "README.md"],
+  "engines": {
+    "node": ">=20.19"
   },
   "peerDependencies": {
     "express": ">=4",

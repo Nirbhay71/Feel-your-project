@@ -1,8 +1,13 @@
 {
   "name": "@feel/client",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Browser side of Feel: Alt + right-click selection, request capture and the viewer panel. Injected by @feel/vite-plugin.",
+  "license": "UNLICENSED",
   "type": "module",
-  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": ["src", "README.md"],
   "dependencies": {
     "shiki": "^3.0.0"
   }

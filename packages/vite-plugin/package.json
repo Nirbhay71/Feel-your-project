@@ -1,11 +1,20 @@
 {
   "name": "@feel/vite-plugin",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Alt + right-click any UI element to see the full stack behind it: component → frontend code → API → backend handler → SQL → tables.",
+  "keywords": ["vite-plugin", "react", "devtools", "tracing", "debugging"],
+  "license": "UNLICENSED",
   "type": "module",
-  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": ["src", "README.md"],
+  "engines": {
+    "node": ">=20.19"
+  },
   "dependencies": {
-    "@feel/agent": "*",
-    "@feel/client": "*",
+    "@feel/agent": "^0.1.0",
+    "@feel/client": "^0.1.0",
     "magic-string": "^0.30.0"
   },
   "peerDependencies": {

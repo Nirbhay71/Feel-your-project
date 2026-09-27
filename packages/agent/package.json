@@ -1,8 +1,16 @@
 {
   "name": "@feel/agent",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Node side of Feel: source lookup, stack mapping, static call graph, SQL and database inspection. Used by @feel/vite-plugin.",
+  "license": "UNLICENSED",
   "type": "module",
-  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": ["src", "README.md"],
+  "engines": {
+    "node": ">=20.19"
+  },
   "dependencies": {
     "@babel/parser": "^7.26.0",
     "@babel/traverse": "^7.26.0",

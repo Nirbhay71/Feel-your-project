@@ -1,17 +1,19 @@
 # Feel
 
 Alt + right-click any UI element to see the full stack behind it:
-frontend file/function/line → backend route/handler → SQL query → database table.
+component → frontend code → API route → backend handler → SQL → tables.
+
+**Setup guide for your own app: [packages/vite-plugin/README.md](packages/vite-plugin/README.md)**
 
 ## Layout
 
-| Folder                 | What it is                                                                          |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| `packages/vite-plugin` | Tags every JSX element with `data-src`, injects the client, mounts the agent        |
-| `packages/client`      | Browser: Alt + right-click, fetch/XHR capture, viewer panel                         |
-| `packages/agent`       | Node side (in Vite dev): source code, stack mapping, call graph, SQL + DB inspection |
-| `packages/node`        | Backend: patches Express + pg to report route, handler and queries per request      |
-| `demo`                 | React dashboard (`src/`) + Express API (`server/`) + Postgres (`db/`, Docker)       |
+| Folder                 | Package             | What it is                                                                 |
+| ---------------------- | ------------------- | -------------------------------------------------------------------------- |
+| `packages/vite-plugin` | `@feel/vite-plugin` | What you install: tags JSX, injects the client, mounts the agent           |
+| `packages/client`      | `@feel/client`      | Browser: selection, request capture, viewer panel (installed by the plugin) |
+| `packages/agent`       | `@feel/agent`       | Node side in Vite dev: code, stack mapping, call graph, SQL + DB (installed by the plugin) |
+| `packages/node`        | `@feel/node`        | Backend: Express + pg instrumentation                                      |
+| `demo`                 | —                   | React dashboard + Express API + Postgres (Docker) to try it on            |
 
 ## Run the demo
 
@@ -25,12 +27,14 @@ npm run demo        # API on :3001 + Vite on :5173
 
 `npm run db:reset` wipes the database and re-seeds it (also removes change tracking).
 
-## Using it in your app (dev only)
+## Try it in another app without publishing
 
-```js
-// vite.config.js
-plugins: [feel({ database: process.env.DATABASE_URL }), react()]
+```bash
+npm run pack        # → packs/*.tgz
+```
 
-// first line of your server entry
-import '@feel/node/register';
+Then in the other app:
+
+```bash
+npm install -D <path>/packs/feel-agent-0.1.0.tgz <path>/packs/feel-client-0.1.0.tgz <path>/packs/feel-vite-plugin-0.1.0.tgz <path>/packs/feel-node-0.1.0.tgz
 ```
