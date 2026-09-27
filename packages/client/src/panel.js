@@ -185,6 +185,7 @@ onRequestsChange(() => {
 // --- Chain ----------------------------------------------------------------
 
 function selectEntry(index) {
+  if (!current) return; // panel was closed (e.g. a late click on an old button)
   const entry = current.chain[index];
   current.index = index;
   current.onFocus?.(entry);
@@ -211,6 +212,7 @@ function renderNav() {
 // --- Data flow (Layer 2) ------------------------------------------------------
 
 async function renderFlow() {
+  if (!current) return;
   const entry = current.chain[current.index];
   const token = (renderFlow.token = {});
   const [reach, possible] = await Promise.all([fetchReach(entry), fetchPossible(entry)]);

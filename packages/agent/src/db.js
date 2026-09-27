@@ -35,6 +35,9 @@ export function createDb(connectionString) {
   async function getTable(name) {
     if (!(await tableExists(name))) return null;
 
+    // Quoted, so mixed-case names (Prisma's "Employee") aren't folded to lowercase.
+    const regclass = `${quoteIdent(SCHEMA)}.${quoteIdent(name)}`;
+
     const [columns, primaryKey, foreignKeys, count] = await Promise.all([
       pool.query(
         `SELECT column_name AS name, data_type AS type, is_nullable = 'YES' AS nullable, column_default AS default
@@ -48,18 +51,21 @@ export function createDb(connectionString) {
          FROM pg_index i
          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey)
          WHERE i.indrelid = $1::regclass AND i.indisprimary`,
-        [`${SCHEMA}.${name}`],
+        [regclass],
       ),
       // Foreign keys in both directions: this table → others, others → this table.
+      // Plain names from pg_class (regclass::text would add quotes: "Employee").
       pool.query(
-        `SELECT c.conrelid::regclass::text  AS from_table, a.attname  AS from_column,
-                c.confrelid::regclass::text AS to_table,   af.attname AS to_column
+        `SELECT fc.relname AS from_table, a.attname  AS from_column,
+                tc.relname AS to_table,   af.attname AS to_column
          FROM pg_constraint c
+         JOIN pg_class fc ON fc.oid = c.conrelid
+         JOIN pg_class tc ON tc.oid = c.confrelid
          CROSS JOIN LATERAL unnest(c.conkey, c.confkey) AS k(col, refcol)
          JOIN pg_attribute a  ON a.attrelid  = c.conrelid  AND a.attnum  = k.col
          JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = k.refcol
          WHERE c.contype = 'f' AND (c.conrelid = $1::regclass OR c.confrelid = $1::regclass)`,
-        [`${SCHEMA}.${name}`],
+        [regclass],
       ),
       pool.query(`SELECT count(*)::int AS n FROM ${quoteIdent(SCHEMA)}.${quoteIdent(name)}`),
     ]);

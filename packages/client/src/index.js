@@ -67,7 +67,10 @@ function buildChain(el) {
   return chain.reverse();
 }
 
-function placeBox(box, el) {
+// label defaults to the element's component from its data-src tag. Elements
+// rendered by a library (a chain entry's first element can be one) have no
+// tag, so the caller passes the component name instead.
+function placeBox(box, el, label) {
   if (!el) {
     box.style.display = 'none';
     return;
@@ -80,14 +83,17 @@ function placeBox(box, el) {
     width: `${r.width}px`,
     height: `${r.height}px`,
   });
-  box.querySelector('.label').textContent = parseSrc(el.getAttribute(ATTR)).component;
+  const tag = el.getAttribute(ATTR);
+  box.querySelector('.label').textContent = label ?? (tag ? parseSrc(tag).component : '');
 }
 
 // Move the red outline to an element (also used when the panel switches
 // between entries in the chain).
-function focus(el) {
+let selectedLabel;
+function focus(el, label) {
   selectedEl = el;
-  placeBox(selectedBox, el);
+  selectedLabel = label;
+  placeBox(selectedBox, el, label);
 }
 
 async function select(el) {
@@ -98,7 +104,7 @@ async function select(el) {
   // back to the DOM-only chain if this isn't React or something goes wrong.
   const chain = (await buildFiberChain(el).catch(() => null)) ?? buildChain(el);
   if (selectedEl !== el) return; // another element was selected meanwhile
-  showPanel(chain, (entry) => focus(entry.element));
+  showPanel(chain, (entry) => focus(entry.element, entry.component));
 
   // Handy for poking around in DevTools.
   window.__feel = { element: el, chain, requests: getRequests() };
@@ -158,6 +164,6 @@ window.addEventListener(
 );
 
 // Keep the red outline glued to the element when the page scrolls or resizes.
-const follow = () => selectedEl && placeBox(selectedBox, selectedEl);
+const follow = () => selectedEl && placeBox(selectedBox, selectedEl, selectedLabel);
 window.addEventListener('scroll', follow, true);
 window.addEventListener('resize', follow);

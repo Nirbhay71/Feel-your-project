@@ -90,12 +90,28 @@ function parseRoute(header) {
 // A stack trace of who's calling right now. Chrome keeps only 10 frames by
 // default, and HTTP libraries use most of them (axios alone takes ~8), which
 // would cut off your code — so capture up to 50 frames.
-function captureStack() {
+// Inside withStack(), the stack handed in wins (see axios.js).
+export function captureStack() {
+  if (handedStack) return handedStack;
   const limit = Error.stackTraceLimit;
   Error.stackTraceLimit = 50;
   const stack = new Error().stack;
   Error.stackTraceLimit = limit;
   return stack;
+}
+
+// Libraries that send requests *later* (axios with interceptors) lose your
+// code from the stack by the time the request goes out. They can capture the
+// stack when you call them, and run the actual send inside withStack().
+let handedStack = null;
+export function withStack(stack, fn) {
+  const previous = handedStack;
+  handedStack = stack;
+  try {
+    return fn();
+  } finally {
+    handedStack = previous;
+  }
 }
 
 // Our own calls (agent, open-in-editor) aren't the app's traffic.
