@@ -22,8 +22,10 @@ const JSX_FILE = /\.(jsx|tsx)$/;
 const CLIENT_URL = '/@feel/client';
 const CLIENT_FILE = fileURLToPath(import.meta.resolve('@feel/client'));
 
-// options.database: Postgres connection string, so the panel can show table
-// structure and changes (Layer 3). Optional.
+// options.database:    Postgres connection string, so the panel can show table
+//                      structure and changes (Layer 3). Optional.
+// options.projectRoot: folder holding frontend *and* backend, if the nearest
+//                      .git above Vite's root isn't it. Optional.
 export default function feel(options = {}) {
   let root = process.cwd();
   let aliases = [];
@@ -51,7 +53,7 @@ export default function feel(options = {}) {
         const mod = await server.moduleGraph.getModuleByUrl(url);
         return mod && { file: mod.file, map: mod.transformResult?.map };
       };
-      server.middlewares.use(AGENT_ROUTE, createAgent({ root, getModule, database: options.database, aliases }));
+      server.middlewares.use(AGENT_ROUTE, createAgent({ root, projectRoot: options.projectRoot, getModule, database: options.database, aliases }));
     },
 
     // Add <script type="module" src="/@feel/client"> at the very top of <head>,

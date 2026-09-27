@@ -59,9 +59,16 @@ function enter(req, res, info) {
     ctx = req.__feel = { id: randomUUID(), method: req.method, path: null, handlers: [], queries: [] };
     hookHeaders(res, ctx);
   }
-  ctx.path = req.baseUrl + (req.route?.path ?? '');
+  ctx.path = routePath(req);
   ctx.handlers.push(info);
   return ctx;
+}
+
+// Mount path + route path, without a trailing slash:
+//   app.use('/api/employees', router) + router.get('/') → "/api/employees"
+function routePath(req) {
+  const full = req.baseUrl + (typeof req.route?.path === 'string' ? req.route.path : '');
+  return full.length > 1 ? full.replace(/\/+$/, '') : full || '/';
 }
 
 // Node calls res.writeHead() right before headers are sent — even when the

@@ -264,7 +264,8 @@ async function renderFlow() {
 // that fits the static pattern — "*" matches one path segment).
 function sameCall(req, call) {
   if (req.method !== call.method) return false;
-  if (req.backend && call.route) return req.backend.path === call.route.path;
+  const trim = (p) => (p.length > 1 ? p.replace(/\/+$/, '') : p);
+  if (req.backend && call.route) return trim(req.backend.path) === trim(call.route.path);
   const path = new URL(req.url, location.href).pathname;
   const pattern = new RegExp(`^${call.url.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]+')}$`);
   return pattern.test(path);

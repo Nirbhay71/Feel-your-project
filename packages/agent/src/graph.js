@@ -13,7 +13,7 @@
 // fetch() calls and SQL queries along the same graph.
 
 import { functionName, findTopLevelFunction } from './ast.js';
-import { loadFile, importTarget } from './files.js';
+import { loadFile, refTarget } from './files.js';
 
 const MAX_DEPTH = 5;
 
@@ -61,22 +61,20 @@ export async function collectFunctions(file, fn, maxDepth = MAX_DEPTH) {
   return nodes;
 }
 
-// Every identifier used inside a function that could point to another
-// function: either imported, or declared at the top of the same file.
+// Every reference inside a function that could point to another function:
+// imported/required, or declared at the top of the same file — including
+// obj.prop (dashboardApi.getAdmin(), ctrl.getStats).
 // Returns [{ file, name }] ("default" for default imports).
 export function referencedFunctions(fn, file) {
   const targets = [];
   fn.traverse({
     Identifier(p) {
       if (!p.isReferencedIdentifier()) return;
-      const binding = p.scope.getBinding(p.node.name);
-      if (!binding) return;
-      if (binding.kind === 'module') {
-        const target = importTarget(binding, file);
-        if (target) targets.push(target);
-      } else if (binding.scope.path.isProgram()) {
-        targets.push({ file, name: p.node.name });
-      }
+      // For `obj.prop`, look at the whole member expression, not just `obj`.
+      const parent = p.parentPath;
+      const ref = parent.isMemberExpression() && parent.node.object === p.node && !parent.node.computed ? parent : p;
+      const target = refTarget(ref, file);
+      if (target) targets.push(target);
     },
   });
   return targets;

@@ -14,6 +14,7 @@
 // GET  /__feel/db/changes?request=…        → rows changed by one request
 // POST /__feel/db/audit                    → turn on change tracking (installs triggers)
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { functionAtLine, findComponent, findNamedFunction, functionName } from './ast.js';
 import { loadFile } from './files.js';
@@ -41,12 +42,16 @@ class HttpError extends Error {
   }
 }
 
-// root:      project folder; nothing outside it is ever read
-// getModule: url → { file, map } from Vite's module graph (for /stack)
-// database:  optional Postgres connection string (for /db/*)
-// aliases:   Vite's resolved resolve.alias, so '@/…' imports can be followed
-export function createAgent({ root, getModule, database, aliases }) {
+// root:        Vite's root (usually the frontend folder)
+// projectRoot: the whole project — frontend *and* backend. Nothing outside it
+//              is ever read. Default: the nearest folder above `root` with a
+//              .git, so client/ + server/ side by side both work.
+// getModule:   url → { file, map } from Vite's module graph (for /stack)
+// database:    optional Postgres connection string (for /db/*)
+// aliases:     Vite's resolved resolve.alias, so '@/…' imports can be followed
+export function createAgent({ root, projectRoot, getModule, database, aliases }) {
   const rootDir = path.resolve(root);
+  const projectDir = projectRoot ? path.resolve(projectRoot) : findProjectRoot(rootDir);
   setViteAliases(aliases, rootDir);
   const db = database ? createDb(database) : null;
   const requireDb = () => {
@@ -54,7 +59,8 @@ export function createAgent({ root, getModule, database, aliases }) {
     return db;
   };
 
-  // Paths shown to the user: relative to the root, forward slashes.
+  // Paths shown to the user: relative to Vite's root (like the data-src tags),
+  // forward slashes. Backend files next to it come out as "../server/…".
   const display = (abs) => path.relative(rootDir, abs).split(path.sep).join('/');
 
   // Security: resolve the path and refuse anything outside the project
@@ -62,7 +68,7 @@ export function createAgent({ root, getModule, database, aliases }) {
   const safePath = (file) => {
     if (!file) throw new HttpError(400, 'Missing ?file=');
     const abs = path.resolve(rootDir, file);
-    if (!abs.startsWith(rootDir + path.sep) || !SOURCE_FILE.test(abs)) {
+    if (!abs.startsWith(projectDir + path.sep) || !SOURCE_FILE.test(abs) || abs.includes(`${path.sep}node_modules${path.sep}`)) {
       throw new HttpError(403, 'File is outside the project or not a source file');
     }
     return abs;
@@ -113,7 +119,8 @@ export function createAgent({ root, getModule, database, aliases }) {
       const abs = safePath(q.get('file'));
       const component = q.get('component');
       if (!component) throw new HttpError(400, 'Missing ?component=');
-      return { calls: await possibleCalls({ abs, component, rootDir, display }) };
+      // Scan the whole project for backend routes, not just the frontend folder.
+      return { calls: await possibleCalls({ abs, component, rootDir: projectDir, display }) };
     },
 
     async 'POST /sql'(q, body) {
@@ -150,6 +157,15 @@ export function createAgent({ root, getModule, database, aliases }) {
       send(res, err.status ?? 500, { error: err.message });
     }
   };
+}
+
+// The nearest folder at or above `dir` that holds a .git (file or folder);
+// `dir` itself if there's none.
+function findProjectRoot(dir) {
+  for (let cur = dir; ; cur = path.dirname(cur)) {
+    if (fs.existsSync(path.join(cur, '.git'))) return cur;
+    if (path.dirname(cur) === cur) return dir;
+  }
 }
 
 // The range to show around `line`: the component if there is one,

@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { traverse, functionName, findTopLevelFunction, functionAtLine, findNamedFunction } from './ast.js';
-import { loadFile, importTarget } from './files.js';
+import { loadFile, importTarget, refTarget, resolveImport } from './files.js';
 import { collectFunctions } from './graph.js';
 import { resolveHandler } from './handler.js';
 import { tablesInSql } from './sql.js';
@@ -195,16 +195,15 @@ function resolveFetcher(arg, node, nodes) {
   const inline = (fnPath) => ({ file: node.file, fn: fnPath, name: 'inline fetcher', parent: node, inline: true });
   if (arg.isFunction()) return inline(arg);
 
+  const t = refTarget(arg, node.file); // imported, required or top-level
+  if (t) return nodes.find((n) => n.file === t.file && (n.name === t.name || (t.name === 'default' && isDefaultExport(n.fn)))) ?? null;
+
   const binding = arg.scope.getBinding(arg.node.name);
-  if (!binding) return null;
-  if (binding.kind === 'module') {
-    const t = importTarget(binding, node.file);
-    return t ? (nodes.find((n) => n.file === t.file && (n.name === t.name || (t.name === 'default' && n.fn.parentPath?.isExportDefaultDeclaration()))) ?? null) : null;
-  }
-  if (binding.scope.path.isProgram()) return nodes.find((n) => n.file === node.file && n.name === arg.node.name) ?? null;
-  const init = binding.path.isVariableDeclarator() ? binding.path.get('init') : null;
+  const init = binding?.path.isVariableDeclarator() ? binding.path.get('init') : null;
   return init?.isFunction() ? inline(init) : null;
 }
+
+const isDefaultExport = (fn) => fn.parentPath?.isExportDefaultDeclaration() || fn.parentPath?.isAssignmentExpression();
 
 // fetch(url, options) / window.fetch / axios.get(url) / axios.post(url) /
 // axios(url | { url, method }) / axios.request({ url, method })
@@ -267,11 +266,11 @@ async function axiosInstance(id, file) {
   const binding = id.scope.getBinding(id.node.name);
   if (!binding) return null;
 
-  if (binding.kind === 'module') {
-    // import axios from 'axios' under another name counts as the default instance.
-    if (binding.path.parent.source.value === 'axios') return binding.path.isImportDefaultSpecifier() ? { base: '' } : null;
-    const target = importTarget(binding, file);
-    if (!target) return null;
+  // import axios from 'axios' under another name counts as the default instance.
+  if (binding.kind === 'module' && binding.path.parent.source.value === 'axios') return binding.path.isImportDefaultSpecifier() ? { base: '' } : null;
+
+  const target = importTarget(binding, file); // imported or required from your own code
+  if (target) {
     const key = `${target.file}#${target.name}`;
     if (!instanceCache.has(key)) {
       instanceCache.set(
@@ -287,19 +286,29 @@ async function axiosInstance(id, file) {
 }
 
 // Find `name` (or the default export) in a file and check it's axios.create(...).
+// "*" (a whole required module) means module.exports.
 function exportedInstance(ast, name) {
+  const isDefault = name === 'default' || name === '*';
   let result = null;
   let alias = null;
   traverse(ast, {
     ExportDefaultDeclaration(p) {
-      if (name !== 'default') return;
+      if (!isDefault) return;
       const decl = p.get('declaration');
       if (decl.isIdentifier()) alias = decl.node.name; // export default api;
       else result = instanceFromInit(decl);
       p.stop();
     },
+    AssignmentExpression(p) {
+      const left = p.node.left;
+      if (!isDefault || left.type !== 'MemberExpression' || left.object.name !== 'module' || left.property.name !== 'exports') return;
+      const right = p.get('right');
+      if (right.isIdentifier()) alias = right.node.name; // module.exports = api;
+      else result = instanceFromInit(right);
+      p.stop();
+    },
     VariableDeclarator(p) {
-      if (name === 'default' || p.node.id.name !== name || p.scope.parent) return; // top-level only
+      if (isDefault || p.node.id.name !== name || p.scope.parent) return; // top-level only
       result = instanceFromInit(p.get('init'));
       p.stop();
     },
@@ -373,17 +382,11 @@ function paramIndex(p, topFn) {
 }
 
 // Does this call expression call `target` (a node from collectFunctions)?
+// Handles getJson(…), api.getJson(…), ctrl.getJson(…) — local, imported or required.
 function callsFunction(p, file, target) {
-  const callee = p.get('callee');
-  if (!callee.isIdentifier()) return false;
-  const binding = p.scope.getBinding(callee.node.name);
-  if (!binding) return false;
-  if (binding.kind === 'module') {
-    const t = importTarget(binding, file);
-    if (!t || t.file !== target.file) return false;
-    return t.name === target.name || (t.name === 'default' && target.fn.parentPath?.isExportDefaultDeclaration());
-  }
-  return binding.scope.path.isProgram() && file === target.file && callee.node.name === target.name;
+  const t = refTarget(p.get('callee'), file);
+  if (!t || t.file !== target.file) return false;
+  return t.name === target.name || (t.name === 'default' && isDefaultExport(target.fn));
 }
 
 // The named function *inside* a top-level function where a call sits, if it
@@ -455,16 +458,21 @@ async function scanRoutes(rootDir) {
         if (ROUTE_METHODS.includes(method) && first != null) {
           routes.push({ file, varName: c.object.name, method: method.toUpperCase(), path: first, line: p.node.loc.start.line, handlerIndex: args.length - 2 });
         } else if (method === 'use') {
-          // app.use('/api', statsRoutes, salesRoutes)  or  app.use(router)
+          // app.use('/api', statsRoutes, salesRoutes)   app.use(router)
+          // app.use('/api/x', require('./routes/x'))  — imported, required or local
+          const prefix = first ?? '';
           for (const a of args.slice(first != null ? 1 : 0)) {
+            const required = inlineRequire(a.node);
+            if (required) {
+              const childFile = resolveImport(file, required);
+              if (childFile) mounts.push({ file, varName: c.object.name, prefix, child: { file: childFile } });
+              continue;
+            }
             if (!a.isIdentifier()) continue;
             const binding = a.scope.getBinding(a.node.name);
-            if (binding?.kind === 'module') {
-              const t = importTarget(binding, file);
-              if (t) mounts.push({ file, varName: c.object.name, prefix: first ?? '', child: { file: t.file } });
-            } else if (routers.has(a.node.name)) {
-              mounts.push({ file, varName: c.object.name, prefix: first ?? '', child: { file, varName: a.node.name } });
-            }
+            const t = binding && importTarget(binding, file);
+            if (t) mounts.push({ file, varName: c.object.name, prefix, child: { file: t.file } });
+            else if (routers.has(a.node.name)) mounts.push({ file, varName: c.object.name, prefix, child: { file, varName: a.node.name } });
           }
         }
       },
@@ -490,6 +498,12 @@ async function scanRoutes(rootDir) {
     return [...own].map((prefix) => ({ ...r, fullPath: joinPath(prefix, r.path) }));
   });
 }
+
+// require('./routes/x') written inline → './routes/x'
+const inlineRequire = (node) =>
+  node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'require' && node.arguments[0]?.type === 'StringLiteral'
+    ? node.arguments[0].value
+    : null;
 
 function listFiles(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

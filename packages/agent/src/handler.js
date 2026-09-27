@@ -8,7 +8,7 @@
 // functions imported from another file.
 
 import { traverse, findTopLevelFunction } from './ast.js';
-import { loadFile, importTarget } from './files.js';
+import { loadFile, refTarget } from './files.js';
 
 const ROUTE_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'all', 'use']);
 
@@ -39,20 +39,13 @@ export async function resolveHandler(abs, line, index = 0) {
   // Inline: router.get('/x', (req, res) => { … })
   if (arg.isFunction()) return { file: abs, line: arg.node.loc.start.line };
 
-  if (!arg.isIdentifier()) return null; // e.g. controllers.getStats — not followed yet
-  const binding = arg.scope.getBinding(arg.node.name);
-  if (!binding) return null;
-
-  // Imported: import { getStats } from '../controllers/stats.js'
-  if (binding.kind === 'module') {
-    const target = importTarget(binding, abs);
-    if (!target) return null;
-    const { ast: targetAst } = await loadFile(target.file);
-    const fn = targetAst && findTopLevelFunction(targetAst, target.name);
-    return fn ? { file: target.file, line: fn.node.loc.start.line } : null;
-  }
-
-  // Same file: function listNotifications(req, res) { … }
-  const fn = findTopLevelFunction(ast, arg.node.name);
-  return fn ? { file: abs, line: fn.node.loc.start.line } : null;
+  // Everything else is a reference to a function declared elsewhere:
+  //   getStats            same file, or import { getStats } / const { getStats } = require(…)
+  //   ctrl.getStats       const ctrl = require('../controllers/stats')
+  //   handlers.getStats   an object of handlers, here or imported
+  const target = refTarget(arg, abs);
+  if (!target) return null;
+  const { ast: targetAst } = target.file === abs ? { ast } : await loadFile(target.file);
+  const fn = targetAst && findTopLevelFunction(targetAst, target.name);
+  return fn ? { file: target.file, line: fn.node.loc.start.line } : null;
 }

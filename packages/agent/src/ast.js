@@ -41,9 +41,6 @@ function findEnclosing(p, accept) {
 export function functionName(fn) {
   if (fn.node.id?.name) return fn.node.id.name;
 
-  // { onSuccess() { … } }
-  if (fn.isObjectMethod() && fn.node.key.type === 'Identifier') return fn.node.key.name;
-
   // Climb through wrapper calls like memo(...) / forwardRef(...).
   let parent = fn.parentPath;
   while (parent?.isCallExpression()) parent = parent.parentPath;
@@ -51,9 +48,23 @@ export function functionName(fn) {
   if (parent?.isVariableDeclarator() && parent.node.id.type === 'Identifier') {
     return parent.node.id.name;
   }
-  // { onSuccess: () => { … } } — only directly, not through a wrapper call.
-  if (fn.parentPath.isObjectProperty() && fn.parentPath.node.value === fn.node && fn.parentPath.node.key.type === 'Identifier') {
-    return fn.parentPath.node.key.name;
+
+  // Functions inside an object literal, not through a wrapper call:
+  //   export const dashboardApi = { getAdmin: () => … }  → "dashboardApi.getAdmin"
+  //   module.exports = { getStats: async () => … }        → "getStats"
+  //   useMutation({ onSuccess: () => … })                 → "onSuccess"
+  const prop = fn.isObjectMethod() ? fn : fn.parentPath.isObjectProperty() && fn.parentPath.node.value === fn.node ? fn.parentPath : null;
+  const key = prop && (prop.node.key.type === 'Identifier' ? prop.node.key.name : prop.node.key.value);
+  if (typeof key === 'string' && !prop.node.computed) {
+    const holder = prop.parentPath.parentPath; // ObjectExpression → what holds it
+    const topLevelConst = holder?.isVariableDeclarator() && holder.node.id.type === 'Identifier' && !holder.getFunctionParent();
+    return topLevelConst ? `${holder.node.id.name}.${key}` : key;
+  }
+
+  // exports.getStats = async () => …   /   module.exports.getStats = …
+  if (fn.parentPath.isAssignmentExpression() && fn.parentPath.node.right === fn.node) {
+    const left = fn.parentPath.node.left;
+    if (left.type === 'MemberExpression' && !left.computed && left.property.type === 'Identifier') return left.property.name;
   }
   return null;
 }
@@ -74,6 +85,8 @@ export function functionAtLine(ast, line) {
 //   export function getStats() {}          → getStats
 //   export const fetchSales = () => …      → fetchSales
 //   export default function useApi() {}    → default
+//   module.exports = useApi                 → default   (CommonJS)
+//   export const api = { getAll: () => … }  → api.getAll
 export function findTopLevelFunction(ast, name) {
   let found = null;
   let defaultLocal = null;
@@ -86,6 +99,13 @@ export function findTopLevelFunction(ast, name) {
       else if (decl.isIdentifier()) defaultLocal = decl.node.name; // export default Foo;
       p.stop();
     },
+    AssignmentExpression(p) {
+      if (name !== 'default' || !isModuleExports(p.node.left)) return;
+      const right = p.get('right');
+      if (right.isFunction()) found = right;
+      else if (right.isIdentifier()) defaultLocal = right.node.name; // module.exports = foo;
+      if (found || defaultLocal) p.stop();
+    },
     Function(p) {
       if (p.getFunctionParent() || functionName(p) !== name) return;
       found = p;
@@ -96,3 +116,6 @@ export function findTopLevelFunction(ast, name) {
   if (!found && defaultLocal) return findTopLevelFunction(ast, defaultLocal);
   return found;
 }
+
+const isModuleExports = (node) =>
+  node.type === 'MemberExpression' && !node.computed && node.object.type === 'Identifier' && node.object.name === 'module' && node.property.name === 'exports';
