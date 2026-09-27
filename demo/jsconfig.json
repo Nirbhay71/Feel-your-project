@@ -1,0 +1,11 @@
+{
+  // Same alias as vite.config.js, so editors (and Feel, outside Vite) understand '@/…'.
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+    },
+    "jsx": "react-jsx",
+  },
+  "include": ["src"],
+}

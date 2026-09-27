@@ -1,8 +1,8 @@
 // Reading, parsing (with a cache) and import resolution.
 
 import fs from 'node:fs';
-import path from 'node:path';
 import { parseCode } from './ast.js';
+import { resolveImport } from './resolve.js';
 
 const cache = new Map(); // abs path → { mtimeMs, code, ast }
 
@@ -25,19 +25,9 @@ export async function loadFile(abs) {
   return entry;
 }
 
-const EXTENSIONS = ['', '.js', '.jsx', '.ts', '.tsx', '.mjs', '/index.js', '/index.jsx', '/index.ts', '/index.tsx'];
-
-// "../api.js" from /src/components/SalesChart.jsx → /src/api.js
-// Only relative imports; packages ("react") and aliases ("@/…") return null.
-export function resolveImport(fromAbs, specifier) {
-  if (!specifier.startsWith('.')) return null;
-  const base = path.resolve(path.dirname(fromAbs), specifier);
-  for (const ext of EXTENSIONS) {
-    const candidate = base + ext;
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
-  }
-  return null;
-}
+// Relative imports, Vite aliases, tsconfig paths, package.json "imports" —
+// see resolve.js. Packages ("react") return null.
+export { resolveImport } from './resolve.js';
 
 // For an identifier that was imported, return { file, name } of what it points to.
 //   import useApi from '../hooks/useApi.js'  → { file: …/useApi.js, name: 'default' }

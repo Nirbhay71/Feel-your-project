@@ -7,7 +7,7 @@ import statsRoutes from './routes/stats.js';
 import salesRoutes from './routes/sales.js';
 import notificationRoutes from './routes/notifications.js';
 import orderRoutes from './routes/orders.js';
-import productRoutes from './routes/products.js';
+import productRoutes from '#routes/products';
 
 const app = express();
 

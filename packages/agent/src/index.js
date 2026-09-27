@@ -23,6 +23,7 @@ import { resolveHandler } from './handler.js';
 import { tablesInSql } from './sql.js';
 import { createDb } from './db.js';
 import { possibleCalls } from './static.js';
+import { setViteAliases } from './resolve.js';
 
 export { parseCode, traverse, findComponent, functionName } from './ast.js';
 
@@ -43,8 +44,10 @@ class HttpError extends Error {
 // root:      project folder; nothing outside it is ever read
 // getModule: url → { file, map } from Vite's module graph (for /stack)
 // database:  optional Postgres connection string (for /db/*)
-export function createAgent({ root, getModule, database }) {
+// aliases:   Vite's resolved resolve.alias, so '@/…' imports can be followed
+export function createAgent({ root, getModule, database, aliases }) {
   const rootDir = path.resolve(root);
+  setViteAliases(aliases, rootDir);
   const db = database ? createDb(database) : null;
   const requireDb = () => {
     if (!db) throw new HttpError(503, 'No database configured — pass feel({ database: url })');

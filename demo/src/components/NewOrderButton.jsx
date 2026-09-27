@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { mutate } from 'swr';
-import { placeOrder, notifyDataChanged } from '../api.js';
+import { placeOrder, notifyDataChanged } from '@/api.js';
 
 export default function NewOrderButton() {
   const queryClient = useQueryClient();

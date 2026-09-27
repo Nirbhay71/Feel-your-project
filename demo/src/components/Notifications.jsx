@@ -1,5 +1,5 @@
 import useSWR from 'swr';
-import { fetcher } from '../lib/fetcher.js';
+import { fetcher } from '@/lib/fetcher.js';
 
 export default function Notifications() {
   // Same shared fetcher as TopProducts — only the key (URL) differs.

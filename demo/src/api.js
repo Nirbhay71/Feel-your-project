@@ -1,4 +1,4 @@
-import { api } from './lib/http.js';
+import { api } from '@/lib/http.js';
 
 async function getJson(url, options) {
   const res = await fetch(url, options);

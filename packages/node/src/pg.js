@@ -4,8 +4,9 @@
 //   sql, the file:line in your code that called it, duration, rows, error
 // and added to the current request's context (see context.js).
 //
-// It also tells Postgres which request is running on each connection, so the
-// audit trigger (agent/db.js) can tag every row change with its request:
+// It also tells Postgres which request is running on each connection (before
+// the query, waiting for it), so the audit trigger (agent/db.js) can tag every
+// row change with its request:
 //   SELECT set_config('feel.request_id', '…', false), set_config('feel.request_label', 'POST /api/orders', false)
 
 import { als, callerSite } from './context.js';
@@ -31,49 +32,64 @@ function patch(proto, { tagConnection }) {
 
   proto.query = function (config, values, callback) {
     const ctx = als.getStore();
-
-    // Client = one real database connection. Make sure Postgres knows which
-    // request (if any) is using it before this query runs.
-    if (tagConnection) tag(this, ctx, original);
-
+    const args = arguments;
     const sql = typeof config === 'string' ? config : config?.text;
+
+    // Record it now, while the caller's line is still on the stack.
+    // Skipped without a request context, without SQL (e.g. a cursor), or
+    // when pg itself calls in (Pool → Client, already recorded by the Pool).
     const site = ctx && sql ? callerSite() : null;
-
-    // No request context, no SQL (e.g. a cursor), or called by pg itself
-    // (Pool → Client, already recorded by the Pool patch): pass through.
-    if (!site?.file || ctx.queries.length >= MAX_QUERIES) return original.apply(this, arguments);
-
-    const entry = { sql: sql.slice(0, MAX_SQL), ...site, duration: null, rowCount: null, error: null };
-    ctx.queries.push(entry);
-
-    const start = performance.now();
-    const result = original.apply(this, arguments);
-    // Promise style (await pool.query(...)). Callback style isn't timed.
-    if (typeof result?.then === 'function') {
-      result.then(
-        (r) => {
-          entry.duration = performance.now() - start;
-          entry.rowCount = r?.rowCount ?? null;
-        },
-        (err) => {
-          entry.duration = performance.now() - start;
-          entry.error = err.message;
-        },
-      );
+    let entry = null;
+    if (site?.file && ctx.queries.length < MAX_QUERIES) {
+      entry = { sql: sql.slice(0, MAX_SQL), ...site, duration: null, rowCount: null, error: null };
+      ctx.queries.push(entry);
     }
-    return result;
+
+    const run = () => {
+      const start = performance.now();
+      const result = original.apply(this, args);
+      // Promise style (await pool.query(...)). Callback style isn't timed.
+      if (entry && typeof result?.then === 'function') {
+        result.then(
+          (r) => {
+            entry.duration = performance.now() - start;
+            entry.rowCount = r?.rowCount ?? null;
+          },
+          (err) => {
+            entry.duration = performance.now() - start;
+            entry.error = err.message;
+          },
+        );
+      }
+      return result;
+    };
+
+    // Client = one real database connection. If Postgres doesn't know yet
+    // which request is using it, tell it first — and wait, since pg won't
+    // accept a second query while one is running (deprecated, gone in pg 9).
+    // Queries sent while a tag is still in flight wait behind it too, so
+    // un-awaited sequences (BEGIN; INSERT; …) keep their order.
+    const tagging = tagConnection ? (tag(this, ctx, original, config) ?? this.__feelTagging) : null;
+    return tagging ? tagging.then(run) : run();
   };
 }
 
 // Pooled connections are reused across requests, so set the request on the
 // connection whenever it changes — including clearing it for queries that
 // run outside any request, so they aren't blamed on the previous one.
-// pg runs a connection's queries strictly in order, so this is guaranteed to
-// run before the user's query without waiting for it.
-function tag(client, ctx, originalQuery) {
+// Returns a promise to wait for, or null when nothing needs to change.
+//
+// Streams/cursors ("submittables") must be handed to pg right away, so they
+// can't wait; they keep whatever request the connection had before.
+function tag(client, ctx, originalQuery, config) {
   const id = ctx?.id ?? '';
-  if ((client.__feelRequest ?? '') === id) return;
+  if ((client.__feelRequest ?? '') === id || typeof config?.submit === 'function') return null;
   client.__feelRequest = id;
   const label = ctx ? `${ctx.method} ${ctx.path}` : '';
-  originalQuery.call(client, TAG_SQL, [id, label]).catch(() => {});
+  const pending = originalQuery.call(client, TAG_SQL, [id, label]).catch(() => {}); // never block the real query
+  client.__feelTagging = pending;
+  pending.then(() => {
+    if (client.__feelTagging === pending) client.__feelTagging = null;
+  });
+  return pending;
 }

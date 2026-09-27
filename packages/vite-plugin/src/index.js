@@ -26,6 +26,7 @@ const CLIENT_FILE = fileURLToPath(import.meta.resolve('@feel/client'));
 // structure and changes (Layer 3). Optional.
 export default function feel(options = {}) {
   let root = process.cwd();
+  let aliases = [];
 
   return {
     name: 'feel',
@@ -40,6 +41,7 @@ export default function feel(options = {}) {
 
     configResolved(config) {
       root = config.root;
+      aliases = config.resolve.alias; // normalised by Vite to [{ find, replacement }]
     },
 
     // Mount the agent at /__feel. It gets access to Vite's module graph so it
@@ -49,7 +51,7 @@ export default function feel(options = {}) {
         const mod = await server.moduleGraph.getModuleByUrl(url);
         return mod && { file: mod.file, map: mod.transformResult?.map };
       };
-      server.middlewares.use(AGENT_ROUTE, createAgent({ root, getModule, database: options.database }));
+      server.middlewares.use(AGENT_ROUTE, createAgent({ root, getModule, database: options.database, aliases }));
     },
 
     // Add <script type="module" src="/@feel/client"> at the very top of <head>,

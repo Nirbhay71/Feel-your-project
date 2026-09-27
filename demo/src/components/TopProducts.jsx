@@ -1,5 +1,5 @@
 import useSWR from 'swr';
-import { fetcher } from '../lib/fetcher.js';
+import { fetcher } from '@/lib/fetcher.js';
 
 export default function TopProducts() {
   const { data = [] } = useSWR('/api/products/top', fetcher);

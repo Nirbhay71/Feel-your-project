@@ -1,4 +1,4 @@
-import { pool } from '../db.js';
+import { pool } from '#db';
 
 // Places an order for a random user/product and writes a notification for it —
 // two tables change, linked by notifications.order_id → orders.id.
