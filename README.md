@@ -4,6 +4,7 @@
 down to the line of code, the API route, the backend handler, the SQL and the tables.
 
 [![CI](https://github.com/Nirbhay71/Feel-your-project/actions/workflows/ci.yml/badge.svg)](https://github.com/Nirbhay71/Feel-your-project/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@feel-dev/vite-plugin)](https://www.npmjs.com/package/@feel-dev/vite-plugin)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Why
