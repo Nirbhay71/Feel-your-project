@@ -2,12 +2,26 @@
   "name": "@feel/client",
   "version": "0.1.0",
   "description": "Browser side of Feel: Alt + right-click selection, request capture and the viewer panel. Injected by @feel/vite-plugin.",
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "author": "Nirbhay71",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nirbhay71/Feel-your-project.git",
+    "directory": "packages/client"
+  },
+  "homepage": "https://github.com/Nirbhay71/Feel-your-project#readme",
+  "bugs": {
+    "url": "https://github.com/Nirbhay71/Feel-your-project/issues"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.js"
   },
-  "files": ["src", "README.md"],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "shiki": "^3.0.0"
   }

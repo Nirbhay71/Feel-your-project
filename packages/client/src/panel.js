@@ -729,7 +729,7 @@ function describeChange(c) {
 
 async function enableAudit(tableName) {
   codeBox.innerHTML = '<div class="status-msg">Installing triggers…</div>';
-  const res = await fetch(`${AGENT}/db/audit`, { method: 'POST' });
+  const res = await fetch(`${AGENT}/db/audit`, { method: 'POST', headers: { 'X-Feel': '1' } });
   if (!res.ok) {
     codeBox.replaceChildren(el('div', { className: 'status-msg', textContent: (await res.json()).error }));
     return;

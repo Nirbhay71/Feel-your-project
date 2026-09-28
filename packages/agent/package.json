@@ -2,12 +2,26 @@
   "name": "@feel/agent",
   "version": "0.1.0",
   "description": "Node side of Feel: source lookup, stack mapping, static call graph, SQL and database inspection. Used by @feel/vite-plugin.",
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "author": "Nirbhay71",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nirbhay71/Feel-your-project.git",
+    "directory": "packages/agent"
+  },
+  "homepage": "https://github.com/Nirbhay71/Feel-your-project#readme",
+  "bugs": {
+    "url": "https://github.com/Nirbhay71/Feel-your-project/issues"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.js"
   },
-  "files": ["src", "README.md"],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20.19"
   },

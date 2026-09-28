@@ -416,12 +416,15 @@ const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '.git', '.vite', 'co
 const SOURCE = /\.(jsx?|tsx?|mjs|cjs)$/;
 const MAX_FILES = 3000;
 
-let routeCache = null; // { at, promise } — rescanning on every click is wasteful
+// Rescanning on every click is wasteful — cache briefly, per project folder.
+const routeCache = new Map(); // rootDir → { at, promise }
 
 function backendRoutes(rootDir) {
-  if (routeCache && Date.now() - routeCache.at < 3000) return routeCache.promise;
-  routeCache = { at: Date.now(), promise: scanRoutes(rootDir) };
-  return routeCache.promise;
+  const hit = routeCache.get(rootDir);
+  if (hit && Date.now() - hit.at < 3000) return hit.promise;
+  const entry = { at: Date.now(), promise: scanRoutes(rootDir) };
+  routeCache.set(rootDir, entry);
+  return entry.promise;
 }
 
 async function scanRoutes(rootDir) {

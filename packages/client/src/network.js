@@ -69,7 +69,7 @@ async function agentPost(route, body) {
   try {
     const res = await originalFetch(`${AGENT}/${route}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Feel': '1' }, // see the agent's cross-site check
       body: JSON.stringify(body),
     });
     return await res.json();

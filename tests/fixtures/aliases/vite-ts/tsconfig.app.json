@@ -1,0 +1,7 @@
+{
+  /* like Vite's TS template */
+  "extends": "./tsconfig.base",
+  "compilerOptions": {
+    "paths": { "@/*": ["./src/*"], "@lib/*": ["./src/lib/*"], }, // trailing commas
+  },
+}

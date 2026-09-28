@@ -41,9 +41,15 @@ function findEnclosing(p, accept) {
 export function functionName(fn) {
   if (fn.node.id?.name) return fn.node.id.name;
 
-  // Climb through wrapper calls like memo(...) / forwardRef(...).
+  // Climb through wrapper calls like memo(...) / forwardRef(...) /
+  // useCallback(...) / debounce(...) — they return (a version of) the function.
+  // Not through calls that just *run* it later and return something else:
+  //   const timer = setTimeout(() => …)   →  the arrow isn't "timer"
   let parent = fn.parentPath;
-  while (parent?.isCallExpression()) parent = parent.parentPath;
+  while (parent?.isCallExpression()) {
+    if (NOT_A_WRAPPER.test(calleeName(parent.node.callee))) return null;
+    parent = parent.parentPath;
+  }
 
   if (parent?.isVariableDeclarator() && parent.node.id.type === 'Identifier') {
     return parent.node.id.name;
@@ -115,6 +121,16 @@ export function findTopLevelFunction(ast, name) {
 
   if (!found && defaultLocal) return findTopLevelFunction(ast, defaultLocal);
   return found;
+}
+
+// Calls that take a callback but return something that isn't that callback.
+const NOT_A_WRAPPER = /^(setTimeout|setInterval|setImmediate|requestAnimationFrame|requestIdleCallback|queueMicrotask|then|catch|finally|map|forEach|filter|reduce|find|findIndex|some|every|flatMap|sort|addEventListener|removeEventListener|on|once|subscribe)$/;
+
+// foo(...) → "foo";  a.b.foo(...) → "foo";  anything else → ""
+function calleeName(callee) {
+  if (callee.type === 'Identifier') return callee.name;
+  if (callee.type === 'MemberExpression' && !callee.computed && callee.property.type === 'Identifier') return callee.property.name;
+  return '';
 }
 
 const isModuleExports = (node) =>

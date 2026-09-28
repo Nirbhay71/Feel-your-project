@@ -1,40 +1,115 @@
 # Feel
 
-Alt + right-click any UI element to see the full stack behind it:
-component → frontend code → API route → backend handler → SQL → tables.
+**Alt + right-click any element in your React app and see the whole stack behind it** —
+down to the line of code, the API route, the backend handler, the SQL and the tables.
 
-**Setup guide for your own app: [packages/vite-plugin/README.md](packages/vite-plugin/README.md)**
+[![CI](https://github.com/Nirbhay71/Feel-your-project/actions/workflows/ci.yml/badge.svg)](https://github.com/Nirbhay71/Feel-your-project/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Layout
+## Why
 
-| Folder                 | Package             | What it is                                                                 |
-| ---------------------- | ------------------- | -------------------------------------------------------------------------- |
-| `packages/vite-plugin` | `@feel/vite-plugin` | What you install: tags JSX, injects the client, mounts the agent           |
-| `packages/client`      | `@feel/client`      | Browser: selection, request capture, viewer panel (installed by the plugin) |
-| `packages/agent`       | `@feel/agent`       | Node side in Vite dev: code, stack mapping, call graph, SQL + DB (installed by the plugin) |
-| `packages/node`        | `@feel/node`        | Backend: Express + pg instrumentation                                      |
-| `demo`                 | —                   | React dashboard + Express API + Postgres (Docker) to try it on            |
+More and more apps are generated or "vibe coded". They work — but nobody quite
+knows what happens under the hood. Feel answers "where does *this* come from?"
+for any piece of UI, without reading the whole codebase:
 
-## Run the demo
+```
+The "Sales this week" chart (from the demo app)
+  component   Dashboard › SalesChart                     SalesChart.jsx:11
+  frontend    ⇢ @tanstack/react-query ⇢ fetchSales        api.js:13
+  API         GET /api/sales
+  backend     inline handler                             server/routes/sales.js:7
+  SQL         SELECT … FROM orders …                     sales.js:8 · 10 ms · 7 rows
+  tables      orders → users, products · ← notifications · changed 2m ago
+```
 
-Needs Docker Desktop running.
+Every step opens the actual code. Calls a component *could* make but hasn't yet
+(buttons nobody clicked) show up too, found from the code alone.
+
+## What you get
+
+- **Component chain** from React's own tree, with the exact JSX line of each usage
+- **Data flow** per component, as a list or a graph: frontend functions → API route →
+  backend handler → SQL queries → tables → related tables
+- **Code viewer** at every step, and "Open in editor"
+- **Possible calls**: static analysis of calls not made yet (dashed in the graph)
+- **Database view** (Postgres): columns, keys, foreign keys both ways, and — opt-in —
+  every change, linked to the request and component that caused it
+- **Dev only**: nothing is added to production builds
+
+## Quick start
+
+> Not on npm yet — install from this repo for now.
+
+```bash
+git clone https://github.com/Nirbhay71/Feel-your-project.git
+cd Feel-your-project && npm install && npm run pack     # → packs/*.tgz
+```
+
+In your app:
+
+```bash
+npm install -D <path>/packs/feel-agent-0.1.0.tgz <path>/packs/feel-client-0.1.0.tgz <path>/packs/feel-vite-plugin-0.1.0.tgz
+npm install -D <path>/packs/feel-node-0.1.0.tgz          # in your backend
+```
+
+```js
+// vite.config.js
+import feel from '@feel/vite-plugin';
+export default defineConfig({
+  plugins: [feel({ database: process.env.DATABASE_URL }), react()], // database is optional
+});
+```
+
+```js
+// first line of your server entry
+import '@feel/node/register';      // or: require('@feel/node/register')
+```
+
+Run your app as usual, then **hold Alt** (outlines) and **Alt + right-click** (panel).
+Full setup guide: [packages/vite-plugin/README.md](packages/vite-plugin/README.md).
+
+## Supported
+
+| | |
+|---|---|
+| Frontend | React 19 (dev mode) on Vite — tested with Vite 7 and 8 |
+| Data fetching | `fetch`, axios, `axios.create` instances (incl. interceptors), wrapper functions, custom hooks, API objects (`userApi.getAll()`), React Query, SWR |
+| Imports | relative, Vite `resolve.alias`, tsconfig/jsconfig `paths` + `baseUrl`, `package.json` `"imports"` |
+| Backend | Express 4 and 5 — ES modules or CommonJS, routers, `app.use` mounts, controllers |
+| Database | Postgres through `pg`: queries per request, tables, structure, change history |
+| Layout | frontend and backend in one folder or side by side (`client/` + `server/`) |
+
+## Not yet
+
+- **Prisma** and other ORMs — routes and handlers work, SQL per request doesn't yet
+- **Next.js**, Create React App, Vue, Svelte — Feel needs Vite + React today
+- **Supabase** (browser talks to the database directly)
+- React 18 and older show a simpler, DOM-based component chain
+
+Want one of these? See [CONTRIBUTING.md](CONTRIBUTING.md) — PRs very welcome.
+
+## How it works
+
+| Package | Runs in | Does |
+|---|---|---|
+| [`@feel/vite-plugin`](packages/vite-plugin) | Vite | tags every JSX element with its file:line, tags components, injects the client |
+| [`@feel/client`](packages/client) | browser | Alt + right-click, React fiber chain, captures fetch/XHR/axios with stack traces, the panel |
+| [`@feel/agent`](packages/agent) | Vite dev server | maps stacks through sourcemaps, builds the call graph, static analysis, reads Postgres |
+| [`@feel/node`](packages/node) | your backend | reports the Express route, handler and SQL of each request in a response header |
+
+## Try the demo
 
 ```bash
 npm install
-npm run db          # Postgres on :5433 (first run seeds it)
-npm run demo        # API on :3001 + Vite on :5173
+npm run db      # Postgres in Docker on :5433
+npm run demo    # API :3001 + app :5173
 ```
 
-`npm run db:reset` wipes the database and re-seeds it (also removes change tracking).
+## Contributing & security
 
-## Try it in another app without publishing
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, code layout, tests
+- [SECURITY.md](SECURITY.md) — what Feel can access, and how to report issues privately
 
-```bash
-npm run pack        # → packs/*.tgz
-```
+## License
 
-Then in the other app:
-
-```bash
-npm install -D <path>/packs/feel-agent-0.1.0.tgz <path>/packs/feel-client-0.1.0.tgz <path>/packs/feel-vite-plugin-0.1.0.tgz <path>/packs/feel-node-0.1.0.tgz
-```
+[MIT](LICENSE)

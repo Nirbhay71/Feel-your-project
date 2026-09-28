@@ -60,6 +60,12 @@ export async function buildFiberChain(el) {
   const last = chain[chain.length - 1];
   if (clicked && clicked.component === last.component && clicked.file === last.file) {
     Object.assign(last, { line: clicked.line, column: clicked.column, element: el });
+  } else if (clicked) {
+    // The element was written in another component and passed in as
+    // children — e.g. modal content: <Modal>…text…</Modal> in ScheduleListPage
+    // renders inside Modal. Add where it's *written* as the last entry, so the
+    // panel opens on that line and not on Modal's {children}.
+    chain.push({ component: clicked.component, file: clicked.file, line: clicked.line, column: clicked.column, element: el });
   }
   return chain;
 }

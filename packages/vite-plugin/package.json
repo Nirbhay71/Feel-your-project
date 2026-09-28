@@ -2,13 +2,33 @@
   "name": "@feel/vite-plugin",
   "version": "0.1.0",
   "description": "Alt + right-click any UI element to see the full stack behind it: component → frontend code → API → backend handler → SQL → tables.",
-  "keywords": ["vite-plugin", "react", "devtools", "tracing", "debugging"],
-  "license": "UNLICENSED",
+  "keywords": [
+    "vite-plugin",
+    "react",
+    "devtools",
+    "tracing",
+    "debugging"
+  ],
+  "license": "MIT",
+  "author": "Nirbhay71",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nirbhay71/Feel-your-project.git",
+    "directory": "packages/vite-plugin"
+  },
+  "homepage": "https://github.com/Nirbhay71/Feel-your-project#readme",
+  "bugs": {
+    "url": "https://github.com/Nirbhay71/Feel-your-project/issues"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.js"
   },
-  "files": ["src", "README.md"],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20.19"
   },

@@ -2,14 +2,34 @@
   "name": "@feel/node",
   "version": "0.1.0",
   "description": "Backend side of Feel: tells the browser which Express route, handler and SQL queries answered each request (dev only).",
-  "keywords": ["express", "pg", "postgres", "devtools", "tracing"],
-  "license": "UNLICENSED",
+  "keywords": [
+    "express",
+    "pg",
+    "postgres",
+    "devtools",
+    "tracing"
+  ],
+  "license": "MIT",
+  "author": "Nirbhay71",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nirbhay71/Feel-your-project.git",
+    "directory": "packages/node"
+  },
+  "homepage": "https://github.com/Nirbhay71/Feel-your-project#readme",
+  "bugs": {
+    "url": "https://github.com/Nirbhay71/Feel-your-project/issues"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.js",
     "./register": "./src/register.js"
   },
-  "files": ["src", "README.md"],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20.19"
   },
@@ -18,7 +38,11 @@
     "pg": ">=8"
   },
   "peerDependenciesMeta": {
-    "express": { "optional": true },
-    "pg": { "optional": true }
+    "express": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
   }
 }

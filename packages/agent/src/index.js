@@ -150,6 +150,16 @@ export function createAgent({ root, projectRoot, getModule, database, aliases })
     const route = routes[`${req.method} ${url.pathname}`];
     if (!route) return next();
 
+    // Only the page served by this dev server may use the agent. Another site
+    // open in the same browser can't read our responses (no CORS), but it
+    // could still *send* a POST — e.g. one that installs audit triggers.
+    //  - a browser always sends Origin on cross-site requests: it must be us
+    //  - POSTs need the X-Feel header, which a cross-site page can't add
+    //    without a CORS preflight that we never approve
+    const origin = req.headers.origin;
+    if (origin && new URL(origin).host !== req.headers.host) return send(res, 403, { error: 'Cross-origin request refused' });
+    if (req.method === 'POST' && req.headers['x-feel'] !== '1') return send(res, 403, { error: 'Missing X-Feel header' });
+
     try {
       const body = req.method === 'POST' ? await readJson(req) : null;
       send(res, 200, await route(url.searchParams, body));
