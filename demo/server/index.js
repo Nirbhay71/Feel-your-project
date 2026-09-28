@@ -1,6 +1,6 @@
 // Must be the FIRST import: it patches Express and pg before any routes or
 // database code is loaded. (ES imports run in order.)
-import '@feel/node/register';
+import '@feel-dev/node/register';
 
 import express from 'express';
 import statsRoutes from './routes/stats.js';

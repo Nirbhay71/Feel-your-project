@@ -38,23 +38,14 @@ Every step opens the actual code. Calls a component *could* make but hasn't yet
 
 ## Quick start
 
-> Not on npm yet — install from this repo for now.
-
 ```bash
-git clone https://github.com/Nirbhay71/Feel-your-project.git
-cd Feel-your-project && npm install && npm run pack     # → packs/*.tgz
-```
-
-In your app:
-
-```bash
-npm install -D <path>/packs/feel-agent-0.1.0.tgz <path>/packs/feel-client-0.1.0.tgz <path>/packs/feel-vite-plugin-0.1.0.tgz
-npm install -D <path>/packs/feel-node-0.1.0.tgz          # in your backend
+npm install -D @feel-dev/vite-plugin     # in your frontend
+npm install -D @feel-dev/node            # in your backend
 ```
 
 ```js
 // vite.config.js
-import feel from '@feel/vite-plugin';
+import feel from '@feel-dev/vite-plugin';
 export default defineConfig({
   plugins: [feel({ database: process.env.DATABASE_URL }), react()], // database is optional
 });
@@ -62,7 +53,7 @@ export default defineConfig({
 
 ```js
 // first line of your server entry
-import '@feel/node/register';      // or: require('@feel/node/register')
+import '@feel-dev/node/register';      // or: require('@feel-dev/node/register')
 ```
 
 Run your app as usual, then **hold Alt** (outlines) and **Alt + right-click** (panel).
@@ -92,10 +83,10 @@ Want one of these? See [CONTRIBUTING.md](CONTRIBUTING.md) — PRs very welcome.
 
 | Package | Runs in | Does |
 |---|---|---|
-| [`@feel/vite-plugin`](packages/vite-plugin) | Vite | tags every JSX element with its file:line, tags components, injects the client |
-| [`@feel/client`](packages/client) | browser | Alt + right-click, React fiber chain, captures fetch/XHR/axios with stack traces, the panel |
-| [`@feel/agent`](packages/agent) | Vite dev server | maps stacks through sourcemaps, builds the call graph, static analysis, reads Postgres |
-| [`@feel/node`](packages/node) | your backend | reports the Express route, handler and SQL of each request in a response header |
+| [`@feel-dev/vite-plugin`](packages/vite-plugin) | Vite | tags every JSX element with its file:line, tags components, injects the client |
+| [`@feel-dev/client`](packages/client) | browser | Alt + right-click, React fiber chain, captures fetch/XHR/axios with stack traces, the panel |
+| [`@feel-dev/agent`](packages/agent) | Vite dev server | maps stacks through sourcemaps, builds the call graph, static analysis, reads Postgres |
+| [`@feel-dev/node`](packages/node) | your backend | reports the Express route, handler and SQL of each request in a response header |
 
 ## Try the demo
 

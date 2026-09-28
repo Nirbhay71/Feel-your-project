@@ -1,7 +1,7 @@
 # Security
 
 Feel runs **only in development** — the Vite plugin does nothing in production
-builds, and `@feel/node` does nothing when `NODE_ENV=production`. While your
+builds, and `@feel-dev/node` does nothing when `NODE_ENV=production`. While your
 dev server runs, it can read your source code and your database, so it's
 built to be careful:
 

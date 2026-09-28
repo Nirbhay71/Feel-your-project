@@ -515,7 +515,7 @@ function renderRequest(req, count) {
       );
     }
   } else {
-    backend.append(el('span', { className: 'muted', textContent: 'not instrumented (add @feel/node)' }));
+    backend.append(el('span', { className: 'muted', textContent: 'not instrumented (add @feel-dev/node)' }));
   }
 
   const rows = [head, frontend, backend];

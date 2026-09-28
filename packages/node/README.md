@@ -1,6 +1,6 @@
-# @feel/node
+# @feel-dev/node
 
-Backend half of Feel (setup guide: `@feel/vite-plugin`). Tells the browser, for every request:
+Backend half of Feel (setup guide: `@feel-dev/vite-plugin`). Tells the browser, for every request:
 
 - which **Express route and handler** answered it (file and line where it was registered)
 - which **SQL queries** it ran through `pg`, and the line in your code that sent each one
@@ -11,8 +11,8 @@ Backend half of Feel (setup guide: `@feel/vite-plugin`). Tells the browser, for 
 First line of your server entry file:
 
 ```js
-import '@feel/node/register';        // ES modules
-require('@feel/node/register');      // CommonJS (Node 20.19+)
+import '@feel-dev/node/register';        // ES modules
+require('@feel-dev/node/register');      // CommonJS (Node 20.19+)
 ```
 
 Express and `pg` are patched only if they're installed. Does nothing when `NODE_ENV=production`.

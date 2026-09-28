@@ -14,19 +14,19 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import MagicString from 'magic-string';
-import { parseCode, traverse, findComponent, functionName, createAgent, AGENT_ROUTE } from '@feel/agent';
+import { parseCode, traverse, findComponent, functionName, createAgent, AGENT_ROUTE } from '@feel-dev/agent';
 
 const ATTR = 'data-src';
 const JSX_FILE = /\.(jsx|tsx)$/;
 
 // The browser script (Piece 2) is served under this URL.
-const CLIENT_URL = '/@feel/client';
-const CLIENT_FILE = fileURLToPath(import.meta.resolve('@feel/client'));
+const CLIENT_URL = '/@feel-dev/client';
+const CLIENT_FILE = fileURLToPath(import.meta.resolve('@feel-dev/client'));
 
 // Only for apps that use axios: a tiny module that patches the app's own axios
-// (see @feel/client/src/axios.js). Virtual, so apps without axios never try to
+// (see @feel-dev/client/src/axios.js). Virtual, so apps without axios never try to
 // import it.
-const AXIOS_URL = '/@feel/axios';
+const AXIOS_URL = '/@feel-dev/axios';
 const AXIOS_ID = '\0feel-axios';
 const AXIOS_PATCH_FILE = path.join(path.dirname(CLIENT_FILE), 'axios.js').split(path.sep).join('/');
 
@@ -44,10 +44,10 @@ export default function feel(options = {}) {
     apply: 'serve', // never runs in production builds
     enforce: 'pre', // see the raw JSX before React's own transform
 
-    // Pre-bundle Shiki (the panel's highlighter, a dependency of @feel/client)
+    // Pre-bundle Shiki (the panel's highlighter, a dependency of @feel-dev/client)
     // up front; otherwise Vite discovers it on first use and reloads the page.
     config() {
-      return { optimizeDeps: { include: ['@feel/client > shiki'] } };
+      return { optimizeDeps: { include: ['@feel-dev/client > shiki'] } };
     },
 
     configResolved(config) {
@@ -71,7 +71,7 @@ export default function feel(options = {}) {
       server.middlewares.use(AGENT_ROUTE, createAgent({ root, projectRoot: options.projectRoot, getModule, database: options.database, aliases }));
     },
 
-    // Add <script type="module" src="/@feel/client"> at the very top of <head>,
+    // Add <script type="module" src="/@feel-dev/client"> at the very top of <head>,
     // so it runs before the app and can wrap fetch before any request is made...
     transformIndexHtml() {
       const tags = [{ tag: 'script', attrs: { type: 'module', src: CLIENT_URL }, injectTo: 'head-prepend' }];

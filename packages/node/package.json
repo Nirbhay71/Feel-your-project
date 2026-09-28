@@ -1,5 +1,5 @@
 {
-  "name": "@feel/node",
+  "name": "@feel-dev/node",
   "version": "0.1.0",
   "description": "Backend side of Feel: tells the browser which Express route, handler and SQL queries answered each request (dev only).",
   "keywords": [

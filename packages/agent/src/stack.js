@@ -14,7 +14,7 @@ import { loadFile } from './files.js';
 const FRAME = /(https?:\/\/[^\s()]+?):(\d+):(\d+)\)?\s*$/;
 
 // Frames from these URLs are libraries or our own tooling — skip them.
-const IGNORE = ['/node_modules/', '/@vite/', '/@feel/', '/@react-refresh', '/@id/'];
+const IGNORE = ['/node_modules/', '/@vite/', '/@feel-dev/', '/@react-refresh', '/@id/'];
 
 const traceMaps = new WeakMap(); // sourcemap object → TraceMap
 

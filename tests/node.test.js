@@ -1,4 +1,4 @@
-// @feel/node against a real Express server: the X-Feel-Route header must name
+// @feel-dev/node against a real Express server: the X-Feel-Route header must name
 // the route, the handler's registration file:line and a unique request id.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

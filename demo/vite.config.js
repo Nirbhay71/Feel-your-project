@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import feel from '@feel/vite-plugin';
+import feel from '@feel-dev/vite-plugin';
 
 export default defineConfig(({ mode }) => {
   // Same demo/.env the API server uses.

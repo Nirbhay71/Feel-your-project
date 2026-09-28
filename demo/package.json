@@ -26,8 +26,8 @@
     "swr": "^2.5.1"
   },
   "devDependencies": {
-    "@feel/node": "*",
-    "@feel/vite-plugin": "*",
+    "@feel-dev/node": "*",
+    "@feel-dev/vite-plugin": "*",
     "@vitejs/plugin-react": "^5.0.0",
     "vite": "^7.0.0"
   }

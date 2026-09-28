@@ -1,6 +1,6 @@
 // Side-effect entry point. Put this as the FIRST import of your server:
 //
-//   import '@feel/node/register';
+//   import '@feel-dev/node/register';
 //
 // It patches Express and pg (whichever are installed) before your own files
 // run. Does nothing in production.

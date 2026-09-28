@@ -145,7 +145,7 @@ export function createDb(connectionString) {
 // older feel_audit (adds the request columns) and replaces the function.
 //
 // request_id / request_label come from the connection settings that
-// @feel/node sets before each query (see packages/node/src/pg.js). Changes
+// @feel-dev/node sets before each query (see packages/node/src/pg.js). Changes
 // made outside a request (psql, migrations, cron) have them NULL.
 const AUDIT_SCHEMA = `
   CREATE TABLE IF NOT EXISTS feel_audit (

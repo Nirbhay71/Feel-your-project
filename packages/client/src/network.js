@@ -4,7 +4,7 @@
 // with:
 //   - a stack trace taken at the moment the request was made → which of your
 //     functions made it (the agent maps it back to original lines)
-//   - the X-Feel-Route response header set by @feel/node → which backend
+//   - the X-Feel-Route response header set by @feel-dev/node → which backend
 //     route and handler answered it, and which SQL queries it ran
 //
 // Must be imported before the app runs, so it's the first import of index.js

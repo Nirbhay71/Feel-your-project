@@ -1,4 +1,4 @@
-# @feel/vite-plugin
+# @feel-dev/vite-plugin
 
 **Alt + right-click any element in your React app** and see the full stack behind it:
 
@@ -14,7 +14,7 @@ Dev only — nothing is added to production builds.
 ## Install
 
 ```bash
-npm install -D @feel/vite-plugin @feel/node
+npm install -D @feel-dev/vite-plugin @feel-dev/node
 ```
 
 ## Set up
@@ -22,7 +22,7 @@ npm install -D @feel/vite-plugin @feel/node
 **1. Frontend** — `vite.config.js`:
 
 ```js
-import feel from '@feel/vite-plugin';
+import feel from '@feel-dev/vite-plugin';
 
 export default defineConfig({
   plugins: [
@@ -37,14 +37,14 @@ export default defineConfig({
 **2. Backend** — first line of your server entry file (Express + `pg`):
 
 ```js
-import '@feel/node/register';        // ES modules
+import '@feel-dev/node/register';        // ES modules
 // or
-require('@feel/node/register');      // CommonJS
+require('@feel-dev/node/register');      // CommonJS
 ```
 
 It must come before anything that loads your routes or database code.
 
-**3. Proxy your API through Vite** (or allow the `X-Feel-Route` response header cross-origin — `@feel/node` already exposes it):
+**3. Proxy your API through Vite** (or allow the `X-Feel-Route` response header cross-origin — `@feel-dev/node` already exposes it):
 
 ```js
 server: { proxy: { '/api': 'http://localhost:3001' } }
