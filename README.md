@@ -62,14 +62,44 @@ import '@feel-dev/node/register';      // or: require('@feel-dev/node/register')
 Run your app as usual, then **hold Alt** (outlines) and **Alt + right-click** (panel).
 Full setup guide: [packages/vite-plugin/README.md](packages/vite-plugin/README.md).
 
+### Next.js
+
+```bash
+npm install -D @feel-dev/next
+```
+
+```js
+// next.config.mjs
+import { withFeel } from '@feel-dev/next';
+export default withFeel({ /* your config */ }, { database: process.env.DATABASE_URL });
+```
+
+```js
+// instrumentation.js — route handlers' SQL
+export async function register() {
+  if (process.env.NODE_ENV === 'development' && process.env.NEXT_RUNTIME === 'nodejs') {
+    await import('@feel-dev/next/register');
+  }
+}
+
+// instrumentation-client.js — the browser side
+import '@feel-dev/next/client';
+
+// app/%5F%5Ffeel/[...path]/route.js — Feel's agent (the folder name is "__feel", escaped)
+export { GET, POST } from '@feel-dev/next/agent';
+```
+
+Works with Turbopack (`next dev`) and webpack (`next dev --webpack`), Next 15.3+.
+Full guide: [packages/next/README.md](packages/next/README.md).
+
 ## Supported
 
 | | |
 |---|---|
-| Frontend | React 19 (dev mode) on Vite — tested with Vite 7 and 8 |
+| Frontend | React 19 (dev mode) on Vite — tested with Vite 7 and 8 — or on **Next.js** App Router (15.3+, tested with 16; Turbopack or webpack) |
 | Data fetching | `fetch`, axios, `axios.create` instances (incl. interceptors), wrapper functions, custom hooks, API objects (`userApi.getAll()`), React Query, SWR |
 | Imports | relative, Vite `resolve.alias`, tsconfig/jsconfig `paths` + `baseUrl`, `package.json` `"imports"` |
-| Backend | Express 4 and 5 — ES modules or CommonJS, routers, `app.use` mounts, controllers |
+| Backend | Express 4 and 5 — ES modules or CommonJS, routers, `app.use` mounts, controllers; Next.js Route Handlers (`app/**/route.ts`) and Pages Router API routes (`pages/api/**`) |
 | Database | Postgres: queries per request, tables, structure, change history — through `pg`, **Prisma** (7, or 6 with `@prisma/adapter-pg`) or **Drizzle** (`drizzle-orm/node-postgres`) |
 | | **MySQL / MariaDB**: queries per request, tables, timing and the line in your code — through `mysql2` (callbacks or `mysql2/promise`, pools, `getConnection`, transactions) or **Drizzle** (`drizzle-orm/mysql2`) |
 | Other ORMs on `pg` | Knex, Sequelize, TypeORM, …: SQL and tables per request; the line in your code when the ORM keeps it on the stack |
@@ -81,7 +111,8 @@ Full setup guide: [packages/vite-plugin/README.md](packages/vite-plugin/README.m
 - **MySQL table view and change history** — MySQL queries and tables show per request, but the table view is Postgres only
 - **Other MySQL paths**: the `mysql` and `mariadb` drivers, Prisma on MySQL, and prepared statements made with `connection.prepare()`; `PoolCluster` is best effort (a query's line may be missing)
 - **SQLite** — the static side understands Drizzle's SQLite tables, the runtime side doesn't yet
-- **Next.js**, Create React App, Vue, Svelte — Feel needs Vite + React today
+- **Next.js beyond Route Handlers**: Server Actions, data fetched inside Server Components, `middleware.ts` / `proxy.ts`, the edge runtime, and Next before 15.3 (Server Components still get their DOM tags and component chain)
+- Create React App, Vue, Svelte — Feel needs React on Vite or Next.js today
 - **Supabase** (browser talks to the database directly)
 - React 18 and older show a simpler, DOM-based component chain
 
@@ -92,9 +123,10 @@ Want one of these? See [CONTRIBUTING.md](CONTRIBUTING.md) — PRs very welcome.
 | Package | Runs in | Does |
 |---|---|---|
 | [`@feel-dev/vite-plugin`](packages/vite-plugin) | Vite | tags every JSX element with its file:line, tags components, injects the client |
+| [`@feel-dev/next`](packages/next) | Next.js | the same for Next (a loader for Turbopack and webpack), wraps route handlers, serves the agent from a route |
 | [`@feel-dev/client`](packages/client) | browser | Alt + right-click, React fiber chain, captures fetch/XHR/axios with stack traces, the panel |
-| [`@feel-dev/agent`](packages/agent) | Vite dev server | maps stacks through sourcemaps, builds the call graph, static analysis, reads Postgres |
-| [`@feel-dev/node`](packages/node) | your backend | reports the Express route, handler and SQL of each request (raw `pg`/`mysql2`, Prisma, Drizzle) in a response header |
+| [`@feel-dev/agent`](packages/agent) | Vite / Next dev server | maps stacks through sourcemaps, builds the call graph, static analysis, reads Postgres |
+| [`@feel-dev/node`](packages/node) | your backend | reports the Express route or Next route handler, the handler and SQL of each request (raw `pg`/`mysql2`, Prisma, Drizzle) in a response header |
 
 ## Try the demo
 

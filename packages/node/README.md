@@ -1,8 +1,9 @@
 # @feel-dev/node
 
-Backend half of Feel (setup guide: `@feel-dev/vite-plugin`). Tells the browser, for every request:
+Backend half of Feel (setup guide: `@feel-dev/vite-plugin`, or `@feel-dev/next` for Next.js). Tells the browser, for every request:
 
-- which **Express route and handler** answered it (file and line where it was registered)
+- which **Express route and handler** answered it (file and line where it was registered) —
+  or which **Next.js route handler** (wrapped by `@feel-dev/next`'s loader)
 - which **SQL queries** it ran through `pg`, and the line in your code that sent each one —
   also when an ORM sends them: **Prisma** (7, or 6 with `@prisma/adapter-pg`), **Drizzle**
   (`drizzle-orm/node-postgres`), and Knex, Sequelize, TypeORM, … on `pg`

@@ -24,7 +24,10 @@ const MAYBE_JSX = /\.(js|mjs)$/; // .ts can't hold JSX
 export function transformForNext(code, file, { root, server = false, runtime } = {}) {
   if (/[\\/]node_modules[\\/]/.test(file)) return null;
   const rel = path.relative(root, file).split(path.sep).join('/');
-  if (rel.startsWith('../') || path.isAbsolute(rel)) return null; // outside the app
+  // Files beside the app (a shared folder in a monorepo) are tagged like the
+  // Vite plugin tags them ("../shared/Card.jsx:3:5"); only another drive
+  // on Windows has no relative path at all.
+  if (path.isAbsolute(rel)) return null;
 
   let out = null;
   let steps = 0;

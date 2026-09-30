@@ -2,7 +2,7 @@
 
 ## 0.2.0 — "Sixth Sense"
 
-Feel now sees through ORMs.
+Feel now sees through ORMs, and works in Next.js.
 
 ### Added
 
@@ -29,7 +29,21 @@ Feel now sees through ORMs.
   stays Postgres-only; prepared statements made with `connection.prepare()`
   aren't recorded yet; `PoolCluster` is best effort (the line may be missing).
 
+- **Next.js** (App Router, 15.3+; Turbopack and `next dev --webpack`) through the
+  new `@feel-dev/next`: `withFeel(nextConfig)` plus `instrumentation.js`,
+  `instrumentation-client.js` and a one-line agent route. DOM tags and the
+  component chain for client and Server Components, browser requests mapped
+  through Next's sourcemaps, Route Handlers (`app/**/route.ts`) and Pages
+  Router API routes with their SQL and the line that sent it, and possible
+  calls to route files (`[id]` → `:id`, `[...slug]` → `*`, `(group)` folders
+  left out). The agent route answers only under `next dev`, only on this
+  machine (DNS rebinding) and only to the app's own page.
+
 ### Changed
+
+- The JSX tagging moved from the Vite plugin into `@feel-dev/agent`
+  (`tagJsx`), shared with `@feel-dev/next`. Output for Vite is unchanged.
+- `.ts` files are parsed without JSX, so old-style casts (`<User>data`) work.
 
 - `@feel-dev/node` follows async stack frames to find the line in your code
   that sent a query.

@@ -63,10 +63,10 @@ test('Next loader: .js with JSX is tagged, .js without JSX and .ts are left alon
   assert.equal(parseCode(ts, 'n.ts').program.body.length, 2, 'parseCode reads .ts casts');
 });
 
-test('Next loader: syntax errors, node_modules and files outside the app pass through', () => {
+test('Next loader: syntax errors and node_modules pass through; files beside the app are tagged like Vite does', () => {
   assert.equal(transformForNext('export default () => <div', file('app/page.jsx'), { root: ROOT }), null);
   assert.equal(transformForNext(LIST, path.join(ROOT, 'node_modules', 'x', 'a.jsx'), { root: ROOT }), null);
-  assert.equal(transformForNext(LIST, path.resolve('/elsewhere/a.jsx'), { root: ROOT }), null);
+  assert.match(transformForNext(LIST, path.resolve('/shared/a.jsx'), { root: ROOT }).code, /data-src="\.\.\/shared\/a\.jsx:7:5\|ItemList"/);
 });
 
 test('Next loader: JSX-free route.ts and route.js are wrapped (server build only)', () => {
