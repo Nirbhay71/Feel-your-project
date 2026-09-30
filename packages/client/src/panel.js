@@ -520,6 +520,12 @@ function renderRequest(req, count) {
 
   const rows = [head, frontend, backend];
   for (const q of req.backend?.queries ?? []) rows.push(renderQuery(q));
+  // The backend left some out to keep its response header small.
+  const hidden = req.backend?.truncated;
+  if (hidden) {
+    const note = `(${hidden} more quer${hidden === 1 ? 'y' : 'ies'} not shown)`;
+    rows.push(el('div', { className: 'hop' }, el('span', { className: 'tag', textContent: 'Database' }), el('span', { className: 'muted', textContent: note })));
+  }
   if (req.changes?.length) rows.push(renderRequestChanges(req.changes));
   return el('div', { className: 'req' }, ...rows);
 }

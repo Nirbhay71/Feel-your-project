@@ -79,7 +79,7 @@ Full setup guide: [packages/vite-plugin/README.md](packages/vite-plugin/README.m
 
 - **Prisma's Rust engine** (Prisma 6 and older without a driver adapter) — its queries don't go through `pg`
 - **MySQL table view and change history** — MySQL queries and tables show per request, but the table view is Postgres only
-- **Other MySQL paths**: the `mysql` and `mariadb` drivers, Prisma on MySQL, and prepared statements made with `connection.prepare()`
+- **Other MySQL paths**: the `mysql` and `mariadb` drivers, Prisma on MySQL, and prepared statements made with `connection.prepare()`; `PoolCluster` is best effort (a query's line may be missing)
 - **SQLite** — the static side understands Drizzle's SQLite tables, the runtime side doesn't yet
 - **Next.js**, Create React App, Vue, Svelte — Feel needs Vite + React today
 - **Supabase** (browser talks to the database directly)

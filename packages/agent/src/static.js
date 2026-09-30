@@ -622,7 +622,9 @@ async function queriesIn(file, fn, rootDir) {
 
 // Raw SQL methods: pg's .query(), mysql2's .query() and .execute().
 const RAW_SQL = new Set(['query', 'execute']);
-const LOOKS_SQL = /^\s*(select|insert|update|delete|replace|with)\b/i;
+// Starts with a SQL keyword and then whitespace — so 'delete-user' doesn't
+// count — optionally inside a parenthesis: (SELECT …) UNION (SELECT …).
+const LOOKS_SQL = /^\s*\(?\s*(select|insert|update|delete|replace|with|call)\s/i;
 
 // The SQL text passed to query() / execute(), when it's written right there:
 //   'SELECT …'   `SELECT …`   { sql: 'SELECT …', values }   (mysql2 options)

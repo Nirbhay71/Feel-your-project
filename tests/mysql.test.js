@@ -113,6 +113,11 @@ const connections = []; // single connections, closed at the end
 const users = mysqlTable('users', { id: int('id').primaryKey().autoincrement(), name: varchar('name', { length: 255 }) });
 const db = drizzle(pool, { schema: { users }, mode: 'default' });
 
+// One connection, opened before any request: mysql2 answers every callback
+// from that socket — i.e. from outside every request, like a real app's pool.
+const onePool = mysql.createPool({ ...config, connectionLimit: 1 });
+await new Promise((resolve) => onePool.query('SELECT 0', resolve));
+
 const app = express();
 app.get('/promise', async (req, res) => {
   const [rows] = await pool.query('SELECT * FROM `users`'); // PROMISE_QUERY
@@ -155,6 +160,59 @@ app.get('/closed', async (req, res) => {
   await closed.end();
   try {
     await closed.query('SELECT 1'); // CLOSED_POOL
+  } catch (err) {
+    res.json({ message: err.message });
+  }
+});
+app.get('/nested', (req, res) => {
+  const { id } = req.query;
+  onePool.query(`SELECT '${id}-outer'`, () => {
+    onePool.execute(`SELECT '${id}-inner'`, [], () => res.end());
+  });
+});
+app.get('/nested-connection', (req, res) => {
+  const { id } = req.query;
+  onePool.getConnection((err, conn) => {
+    conn.query(`SELECT '${id}-held'`, () => {
+      conn.query(`SELECT '${id}-again'`, () => {
+        conn.release();
+        res.end();
+      });
+    });
+  });
+});
+app.get('/nested-events', (req, res) => {
+  const { id } = req.query;
+  onePool.query(`SELECT '${id}-outer'`).on('end', () => {
+    onePool.query(`SELECT '${id}-inner'`, () => res.end());
+  });
+});
+app.get('/over-cap', (req, res) => {
+  const { id } = req.query;
+  let left = 50;
+  const next = () => (left-- ? onePool.query('SELECT 1', next) : onePool.query(`SELECT '${id}-51'`, () => res.end()));
+  next();
+});
+app.get('/emitter-error', (req, res) => {
+  cbPool.query('SELECT * FROM nope').on('error', () => {}).on('end', () => res.end());
+});
+app.get('/emitter-closed', async (req, res) => {
+  const closed = mysql.createPool(config);
+  await new Promise((resolve) => closed.end(resolve));
+  // mysql2 emits 'error' and no 'end' here; the response goes out right away.
+  closed.query('SELECT 1').on('error', (err) => res.json({ message: err.message }));
+});
+app.get('/stream', (req, res) => {
+  const conn = mysql.createConnection(config);
+  connections.push(conn);
+  conn.query('SELECT 5').stream().on('data', () => {}).on('end', () => res.end());
+});
+app.get('/undefined-param-connection', (req, res) => {
+  const conn = mysql.createConnection(config);
+  connections.push(conn);
+  try {
+    conn.execute('SELECT ?', [undefined], () => {}); // UNDEFINED_PARAM
+    res.end();
   } catch (err) {
     res.json({ message: err.message });
   }
@@ -280,6 +338,88 @@ test('no extra SQL is ever sent — outside a request or inside one', async () =
   assert.deepEqual(serverLog.slice(during), ['UPDATE users SET a = 1']);
 });
 
+// --- Callbacks run in their own request ------------------------------------------
+// mysql2 calls callbacks from the socket's event handler, which runs in the
+// context of whoever opened the socket — here, nobody (onePool is warmed up
+// before any request). Queries sent from a callback must still land in the
+// request that sent the first one, never in another request.
+
+async function eachOwnsItsQueries(url, suffixes) {
+  const ids = ['r0', 'r1', 'r2', 'r3'];
+  const results = await Promise.all(ids.map((id) => queriesOf(`${url}?id=${id}`)));
+  results.forEach((queries, n) => {
+    assert.deepEqual(
+      queries.map((q) => q.sql).filter((sql) => sql.includes("'r")),
+      suffixes.map((s) => `SELECT '${ids[n]}-${s}'`),
+      `${url} ${ids[n]}`,
+    );
+  });
+}
+
+test('callback style: a query sent from a callback stays in its request', async () => {
+  const queries = await queriesOf('/nested?id=r9');
+  assert.deepEqual(
+    queries.map((q) => q.sql),
+    ["SELECT 'r9-outer'", "SELECT 'r9-inner'"],
+  );
+  assert.ok(queries.every((q) => typeof q.duration === 'number'));
+});
+
+test('callback style on a one-connection pool: parallel requests each get only their own queries', async () => {
+  await eachOwnsItsQueries('/nested', ['outer', 'inner']);
+});
+
+test('getConnection(callback) waiting in the pool queue runs in the request that asked', async () => {
+  await eachOwnsItsQueries('/nested-connection', ['held', 'again']);
+});
+
+test('event style: listeners run in the request that sent the query', async () => {
+  await eachOwnsItsQueries('/nested-events', ['outer', 'inner']);
+});
+
+test('callbacks stay in their request even when queries are over the cap', async () => {
+  const [a, b] = await Promise.all([queriesOf('/over-cap?id=ra'), queriesOf('/over-cap?id=rb')]);
+  assert.equal(a.length, 50);
+  assert.equal(b.length, 50);
+  assert.ok(a.every((q) => q.sql === 'SELECT 1'));
+  assert.ok(b.every((q) => q.sql === 'SELECT 1'));
+});
+
+// --- No callback: events, streams, throws -----------------------------------------
+
+test('event style: an error is recorded with its duration, no listener added', async () => {
+  const queries = await queriesOf('/emitter-error');
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0].error, "Table 'feel.nope' doesn't exist");
+  assert.equal(typeof queries[0].duration, 'number');
+});
+
+test("event style: 'error' without 'end' (closed pool) still gets a duration", async () => {
+  const { queries, body } = await request('/emitter-closed');
+  assert.equal(body.message, 'Pool is closed.');
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0].error, 'Pool is closed.');
+  assert.equal(typeof queries[0].duration, 'number');
+});
+
+test('.stream(): recorded once, with a duration', async () => {
+  const queries = await queriesOf('/stream');
+  assert.deepEqual(
+    queries.map((q) => q.sql),
+    ['SELECT 5'],
+  );
+  assert.equal(typeof queries[0].duration, 'number');
+});
+
+test('execute() with an undefined parameter: the error is recorded, the app still gets it', async () => {
+  const { queries, body } = await request('/undefined-param-connection');
+  assert.match(body.message, /Bind parameters must not contain undefined/);
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0].line, lineOf('UNDEFINED_PARAM'));
+  assert.match(queries[0].error, /Bind parameters must not contain undefined/);
+  assert.equal(typeof queries[0].duration, 'number');
+});
+
 // --- Drizzle (drizzle-orm/mysql2) -----------------------------------------------
 
 test('drizzle: a lazy query gets the line that built it', async () => {
@@ -327,6 +467,34 @@ test('the pool hand-off is recognised on Windows and POSIX paths', () => {
   assert.ok(!FROM_POOL.test('/app/src/pool.js'));
 });
 
+test('pool.query is recorded once even when mysql2 is bundled under another path', async () => {
+  // A server bundle (webpack, Next) moves mysql2's files, so the pool can't
+  // be recognised by its path; pool.query must still not be recorded twice.
+  // The copy sits in node_modules so it finds mysql2's own dependencies.
+  const dir = path.join(path.dirname(THIS_FILE), '..', 'node_modules', '.cache', `feel-bundle-${process.pid}`);
+  fs.cpSync(path.dirname(require.resolve('mysql2')), dir, { recursive: true });
+  try {
+    const bundled = require(dir);
+    instrumentMysql2(bundled);
+    const bundledPool = bundled.createPool(config);
+    const app2 = express();
+    app2.get('/', (req, res) => {
+      bundledPool.query('SELECT 7', () => res.end());
+    });
+    const listening = app2.listen(0);
+    const res = await fetch(`http://127.0.0.1:${listening.address().port}/`);
+    await new Promise((resolve) => listening.close(resolve));
+    await new Promise((resolve) => bundledPool.end(resolve));
+    const queries = JSON.parse(decodeURIComponent(res.headers.get('x-feel-route'))).queries;
+    assert.deepEqual(
+      queries.map((q) => q.sql),
+      ['SELECT 7'],
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('rowCount: rows, affected rows, and multi-statement results', () => {
   const cols = [{ name: 'id' }];
   assert.equal(rowCountOf([{ id: 1 }, { id: 2 }], cols), 2);
@@ -362,6 +530,7 @@ test('agent: a MySQL database URL gives a clear table-view error, no pg connecti
 test.after(async () => {
   await pool.end();
   await new Promise((resolve) => cbPool.end(resolve));
+  await new Promise((resolve) => onePool.end(resolve));
   await Promise.all(connections.map((c) => new Promise((resolve) => c.end(resolve))));
   await new Promise((resolve) => server.close(resolve));
 });

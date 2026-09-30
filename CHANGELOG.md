@@ -23,15 +23,29 @@ Feel now sees through ORMs.
   `getConnection()`, transactions) and `drizzle-orm/mysql2`: SQL, tables,
   timing, rows and the line in your code for every query a request runs.
   Tables are found in MySQL SQL too — backticks, `?` placeholders,
-  `INSERT IGNORE`, `REPLACE`, `ON DUPLICATE KEY UPDATE`, `LIMIT 10, 20`.
-  Possible calls list `pool.execute('SQL')`. The table view stays
-  Postgres-only; prepared statements made with `connection.prepare()` aren't
-  recorded yet.
+  `INSERT IGNORE`, `REPLACE`, `ON DUPLICATE KEY UPDATE`, `LIMIT 10, 20`,
+  `STRAIGHT_JOIN`, multi-table `UPDATE` / `DELETE`.
+  Possible calls list `pool.execute('SQL')` and `CALL …`. The table view
+  stays Postgres-only; prepared statements made with `connection.prepare()`
+  aren't recorded yet; `PoolCluster` is best effort (the line may be missing).
 
 ### Changed
 
 - `@feel-dev/node` follows async stack frames to find the line in your code
   that sent a query.
+- The `X-Feel-Route` header stays under 12 KB: with many long queries, each
+  query's SQL is shortened, then the last queries are left out ("N more
+  queries not shown" in the panel). Before, a big header could exceed Node's
+  16 KB limit and break the request behind Vite's proxy.
+- Table detection only reads the first 10,000 characters of a statement and
+  stays fast on huge or unusual SQL.
+
+### Fixed
+
+- Callback-style `pg` queries (`pool.query(sql, cb)`, `pool.connect(cb)`):
+  queries sent from inside a callback were missing, or landed in another
+  request, because `pg` runs callbacks in the context of whoever opened the
+  connection. Callbacks now run in their own request.
 
 ## 0.1.0
 

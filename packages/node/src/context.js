@@ -5,7 +5,7 @@
 // (handler → service → db.js → pool.query) still knows which request it
 // belongs to, without passing anything around.
 
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { AsyncLocalStorage, AsyncResource } from 'node:async_hooks';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +16,15 @@ export const als = new AsyncLocalStorage();
 // code but only send it later (on `await`), from a fresh stack. Their patch
 // remembers the line and puts it here around the send (see drizzle.js).
 export const siteStore = new AsyncLocalStorage();
+
+// A database driver calls your callback from its socket's event handler, and
+// that handler runs in the context of whoever opened the socket — for a
+// pooled connection, some earlier request (or none). Bind the callback to
+// the request that is running now, so the queries it sends in turn land in
+// the right request. Outside a request the callback is returned as it is.
+export function bindToRequest(fn) {
+  return als.getStore() && typeof fn === 'function' ? AsyncResource.bind(fn) : fn;
+}
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const NONE = { file: null, line: null, column: null };

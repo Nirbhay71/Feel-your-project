@@ -8,6 +8,7 @@ const bus = { execute: (name) => name };
 router.get('/users', async (req, res) => {
   const [rows] = await pool.execute('SELECT * FROM users');
   bus.execute('RefreshUsers'); // not SQL
+  bus.execute('delete-user'); // not SQL either, though it starts with "delete"
   res.json(rows);
 });
 
@@ -19,6 +20,8 @@ router.get('/stats', async (req, res) => {
 router.get('/lookup', async (req, res) => {
   const [rows] = await pool.query({ sql: 'SELECT * FROM `products` WHERE id = ?', values: [1] });
   await pool.execute(`UPDATE users SET seen = 1`);
+  await pool.execute('CALL refresh_stats(?)', [1]);
+  await pool.query('(SELECT id FROM archived_orders) UNION (SELECT id FROM orders)');
   res.json(rows);
 });
 

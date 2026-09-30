@@ -126,8 +126,17 @@ const mysqlApp = (file, component) => callsOf(MYSQL, path.join(MYSQL, 'client'),
 
 test('mysql: pool.execute and pool.query({ sql }) SQL; db.execute(sql`…`) and bus.execute are not raw SQL', async () => {
   assert.deepEqual(await mysqlApp('src/Users.jsx', 'Users'), [
-    { call: 'GET /api/lookup', route: 'GET /api/lookup', handler: null, tables: ['products', 'users✎'] },
+    { call: 'GET /api/lookup', route: 'GET /api/lookup', handler: null, tables: ['archived_orders', 'orders', 'products', 'users✎'] },
     { call: 'GET /api/stats', route: 'GET /api/stats', handler: null, tables: ['orders'] },
     { call: 'GET /api/users', route: 'GET /api/users', handler: null, tables: ['users'] },
   ]);
+});
+
+test('mysql: CALL and (SELECT …) count as SQL; bus.execute(\'delete-user\') does not', async () => {
+  const abs = path.join(MYSQL, 'client', 'src', 'Users.jsx');
+  const calls = await possibleCalls({ abs, component: 'Users', rootDir: MYSQL, display: (f) => f });
+  const sqlOf = (url) => calls.find((c) => c.url === url).route.queries.map((q) => q.sql);
+  assert.ok(sqlOf('/api/lookup').includes('CALL refresh_stats(?)'));
+  assert.ok(sqlOf('/api/lookup').includes('(SELECT id FROM archived_orders) UNION (SELECT id FROM orders)'));
+  assert.deepEqual(sqlOf('/api/users'), ['SELECT * FROM users']);
 });

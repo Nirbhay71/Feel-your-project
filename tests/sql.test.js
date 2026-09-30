@@ -88,3 +88,51 @@ test('MySQL: ?? (identifier) and :name placeholders', () => {
   assert.deepEqual(tables('SELECT ?? FROM users WHERE id = ?'), { users: 'read' });
   assert.deepEqual(tables('SELECT * FROM users WHERE id = :id AND name = :name'), { users: 'read' });
 });
+
+test('MySQL: tables read inside ON DUPLICATE KEY UPDATE still count', () => {
+  assert.deepEqual(tables('INSERT INTO totals (id, n) VALUES (?, 1) ON DUPLICATE KEY UPDATE n = (SELECT count(*) FROM orders o JOIN users u ON u.id = o.user_id)'), {
+    totals: 'write',
+    orders: 'read',
+    users: 'read',
+  });
+  assert.deepEqual(tables('INSERT INTO `t` (a, b) VALUES (?, ?) ON DUPLICATE KEY UPDATE a = VALUES(a), b = b + 1'), { t: 'write' });
+});
+
+test('MySQL: STRAIGHT_JOIN, multi-table DELETE and UPDATE / DELETE … LIMIT without ? or backticks', () => {
+  assert.deepEqual(tables('SELECT STRAIGHT_JOIN u.id FROM users u STRAIGHT_JOIN orders o ON o.user_id = u.id'), { users: 'read', orders: 'read' });
+  assert.deepEqual(tables('DELETE o, i FROM orders o JOIN items i ON i.order_id = o.id WHERE o.id = 1'), { orders: 'write', items: 'read' });
+  assert.deepEqual(tables('DELETE FROM sessions WHERE expired = 1 ORDER BY id LIMIT 100'), { sessions: 'write' });
+  assert.deepEqual(tables('UPDATE jobs SET taken = 1 WHERE taken = 0 LIMIT 1'), { jobs: 'write' });
+});
+
+test('MySQL: UPDATE with a comma list writes every table before SET', () => {
+  assert.deepEqual(tables('UPDATE users, orders SET users.a = 1, orders.b = 2 WHERE orders.user_id = users.id'), { users: 'write', orders: 'write' });
+  assert.deepEqual(tables('UPDATE `users` u, feel.orders o SET u.a = ? WHERE o.user_id = u.id'), { users: 'write', orders: 'write' });
+});
+
+test('SELECT … FOR UPDATE is a lock, not a table', () => {
+  assert.deepEqual(tables('SELECT * FROM `jobs` WHERE id = ? FOR UPDATE'), { jobs: 'read' });
+});
+
+test('huge or adversarial SQL finishes quickly', () => {
+  const spaces = ' '.repeat(50000);
+  const inputs = [
+    `UPDATE t SET a = ? ORDER BY${spaces}x`,
+    `UPDATE t SET a = ?${spaces}x`,
+    `INSERT INTO t VALUES (?) ON${spaces}x`,
+    `SELECT * FROM t WHERE a = ? LIMIT 1${spaces}x`,
+    `SELECT ? FROM t FOR${spaces}UPDATE of x`,
+    `SELECT * FROM t WHERE${spaces}x ~~~ y`,
+    `UPDATE t${spaces},`,
+    `DELETE FROM t WHERE ?${spaces}LIMIT`,
+    `SELECT ? FROM t WHERE a = '${"''".repeat(25000)}`,
+    `SELECT ? ${'FROM a '.repeat(7000)}`,
+    `INSERT${' IGNORE'.repeat(7000)} x ?`,
+  ];
+  for (const sql of inputs) {
+    const start = performance.now();
+    tablesInSql(sql);
+    const ms = performance.now() - start;
+    assert.ok(ms < 200, `${ms.toFixed(0)} ms for ${sql.slice(0, 40).trim()}…`);
+  }
+});

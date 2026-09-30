@@ -11,7 +11,7 @@
 // row change with its request:
 //   SELECT set_config('feel.request_id', '…', false), set_config('feel.request_label', 'POST /api/orders', false)
 
-import { als, callerSite, calledFrom } from './context.js';
+import { als, callerSite, calledFrom, bindToRequest } from './context.js';
 
 const MAX_QUERIES = 50; // per request — keeps the response header small
 const MAX_SQL = 2000; // characters
@@ -27,6 +27,33 @@ export function instrumentPg(pg) {
   // Pool too, and record there.
   patch(pg.Pool.prototype, { tagConnection: false });
   patch(pg.Client.prototype, { tagConnection: true });
+  patchConnect(pg.Pool.prototype);
+}
+
+// A request waiting for a free client gets it when another request releases
+// one — so the callback would run in the releasing request. Bind it to the
+// request that asked. pool.query() comes through here too. (Promise style
+// needs nothing: code after `await` runs in the awaiting request anyway.)
+function patchConnect(proto) {
+  const original = proto.connect;
+  if (typeof original !== 'function') return;
+  proto.connect = function (cb, ...rest) {
+    return original.call(this, bindToRequest(cb), ...rest);
+  };
+}
+
+// Callback style: pg calls it from the connection's socket, in the context
+// of whoever opened it. Bind it to the running request (see context.js).
+// Streams and cursors ("submittables") report through events instead, and
+// are left alone.
+function bindCallback(args) {
+  if (!als.getStore()) return;
+  const [config] = args;
+  if (typeof args[1] === 'function') args[1] = bindToRequest(args[1]);
+  else if (typeof args[2] === 'function') args[2] = bindToRequest(args[2]);
+  else if (typeof config?.callback === 'function' && typeof config.submit !== 'function') {
+    args[0] = { ...config, callback: bindToRequest(config.callback) }; // a copy: pg writes into it
+  }
 }
 
 function patch(proto, { tagConnection }) {
@@ -36,6 +63,7 @@ function patch(proto, { tagConnection }) {
     const ctx = als.getStore();
     const args = arguments;
     const sql = typeof config === 'string' ? config : config?.text;
+    bindCallback(args);
 
     // Record it now, while the caller's line is still on the stack.
     // Skipped without a request context, without SQL (e.g. a cursor), or
