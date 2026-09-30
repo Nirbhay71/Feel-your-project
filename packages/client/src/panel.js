@@ -510,7 +510,9 @@ function renderRequest(req, count) {
           className: 'be',
           textContent: h.name ?? 'inline handler',
           title: `registered at ${h.file}:${h.line}`,
-          onclick: () => showCode({ file: h.file, line: h.line, resolve: 'handler', index: h.index }),
+          // direct: the line *is* the handler (a Next.js route export) — there's
+          // no router.get(…) call to follow from it.
+          onclick: () => showCode({ file: h.file, line: h.line, resolve: h.direct ? undefined : 'handler', index: h.index }),
         }),
       );
     }
@@ -830,11 +832,12 @@ function scrollToHighlight() {
 }
 
 // Vite's dev server has a built-in /__open-in-editor endpoint that opens a
-// file:line in whichever editor is running (VS Code, WebStorm, …).
+// file:line in whichever editor is running (VS Code, WebStorm, …); Next.js
+// has /__nextjs_launch-editor. The agent says which one (openUrl).
 function openInEditor() {
   const shown = current?.shown;
   if (!shown?.absPath) return; // e.g. a table view — nothing to open
-  fetch(`/__open-in-editor?file=${encodeURIComponent(`${shown.absPath}:${shown.highlightLine}`)}`);
+  fetch(shown.openUrl ?? `/__open-in-editor?file=${encodeURIComponent(`${shown.absPath}:${shown.highlightLine}`)}`);
 }
 
 shadow.querySelector('.open-editor').onclick = openInEditor;

@@ -12,7 +12,8 @@
 //      calls, and work out method + URL — following parameters back to the
 //      callers that pass literals (getJson(url) ← fetchSales: getJson('/api/sales')).
 //   2. backendRoutes: scan the project for Express routes and app.use()
-//      mounts to get each route's full path.
+//      mounts to get each route's full path, and for Next.js route files
+//      (app/**/route.ts, pages/api/**, see next-routes.js).
 //   3. matchRoute: URL pattern ↔ route path (":id" and "*" are wildcards).
 //   4. routeQueries: walk the handler's call graph for pool.query('…') /
 //      pool.execute('…') SQL and Prisma / Drizzle calls (orm.js).
@@ -25,6 +26,7 @@ import { collectFunctions } from './graph.js';
 import { resolveHandler } from './handler.js';
 import { tablesInSql } from './sql.js';
 import { ormQuery } from './orm.js';
+import { findNextRoot, nextRouteInfo, nextRoutesIn } from './next-routes.js';
 
 export async function possibleCalls({ abs, component, rootDir, display }) {
   const loaded = await loadFile(abs).catch(() => null);
@@ -433,10 +435,19 @@ async function scanRoutes(rootDir) {
   const routes = []; // { file, varName, method, path, line, handlerIndex }
   const mounts = []; // { file, varName, prefix, child: { file } | { file, varName } }
   const apps = new Set(); // "file#var" created with express()
+  const nextRoutes = []; // Next.js routes are whole files — no prefixes to work out
 
   for (const file of listFiles(rootDir)) {
     const loaded = await loadFile(file).catch(() => null);
-    if (!loaded?.ast || !/\b(express|Router)\b/.test(loaded.code)) continue;
+    if (!loaded?.ast) continue;
+
+    const nextRoot = findNextRoot(file, rootDir);
+    const info = nextRoot && nextRouteInfo(path.relative(nextRoot, file).split(path.sep).join('/'));
+    if (info) {
+      nextRoutes.push(...(await nextRoutesIn(file, loaded.ast, info)));
+      continue;
+    }
+    if (!/\b(express|Router)\b/.test(loaded.code)) continue;
 
     // const app = express()   const router = Router()   const r = express.Router()
     const routers = new Set();
@@ -498,10 +509,11 @@ async function scanRoutes(rootDir) {
     }
   }
 
-  return routes.flatMap((r) => {
+  const expressRoutes = routes.flatMap((r) => {
     const own = prefixes.get(`${r.file}#${r.varName}`) ?? prefixes.get(r.file) ?? new Set(['']);
     return [...own].map((prefix) => ({ ...r, fullPath: joinPath(prefix, r.path) }));
   });
+  return [...expressRoutes, ...nextRoutes];
 }
 
 // require('./routes/x') written inline → './routes/x'
@@ -540,6 +552,10 @@ function matchRoute(call, routes) {
 
 function segmentsMatch(url, route) {
   if (url[0]?.startsWith('*') && url[0] !== '*') url = ['*', ...url.slice(1)];
+  // A trailing * in the route (Next's [...slug]) takes one or more segments.
+  if (route.at(-1) === '*' && url.length >= route.length && url.length > 0) {
+    if (segmentsMatch(url.slice(0, route.length - 1), route.slice(0, -1))) return true;
+  }
   if (url[0] === '*' && url.length <= route.length) {
     // leading * = base URL: try it against every possible number of leading segments
     for (let skip = 0; skip <= route.length - url.length + 1; skip++) {
@@ -553,10 +569,12 @@ function segmentsMatch(url, route) {
 // --- 4. Route → handler → SQL -----------------------------------------------------
 
 async function describeRoute(route, rootDir) {
-  const target = (await resolveHandler(route.file, route.line, route.handlerIndex).catch(() => null)) ?? {
-    file: route.file,
-    line: route.line,
-  };
+  // Next.js routes already point at their handler (the exported function).
+  const target = route.handlerTarget ??
+    (await resolveHandler(route.file, route.line, route.handlerIndex).catch(() => null)) ?? {
+      file: route.file,
+      line: route.line,
+    };
   const loaded = await loadFile(target.file).catch(() => null);
   const fn = loaded?.ast && functionAtLine(loaded.ast, target.line);
 
@@ -565,7 +583,7 @@ async function describeRoute(route, rootDir) {
     path: route.fullPath,
     file: route.file, // where it's registered (router.get…), absolute like runtime
     line: route.line,
-    handler: { file: target.file, line: target.line, name: (fn && functionName(fn)) ?? null, index: route.handlerIndex },
+    handler: { file: target.file, line: target.line, name: (fn && functionName(fn)) ?? null, index: route.handlerIndex, direct: !!route.direct },
     queries: fn ? await queriesIn(target.file, fn, rootDir) : [],
   };
 }

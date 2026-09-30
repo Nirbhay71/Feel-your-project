@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { als, callerSite } from './context.js';
 
-const HEADER = 'X-Feel-Route';
+export const HEADER = 'X-Feel-Route';
 // Node (and so Vite's dev proxy) refuses responses whose headers add up to
 // more than 16 KB, which would break the app's own request — so ours stays
 // under 12 KB, leaving room for the app's headers.
@@ -79,7 +79,7 @@ function routePath(req) {
 // Node calls res.writeHead() right before headers are sent — even when the
 // app only calls res.json() / res.end(). That's the last moment to add ours,
 // and by then the handler's queries have finished.
-function hookHeaders(res, ctx) {
+export function hookHeaders(res, ctx) {
   const writeHead = res.writeHead;
   res.writeHead = function (...args) {
     if (!res.headersSent) {

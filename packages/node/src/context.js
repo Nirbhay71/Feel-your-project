@@ -6,6 +6,8 @@
 // belongs to, without passing anything around.
 
 import { AsyncLocalStorage, AsyncResource } from 'node:async_hooks';
+import fs from 'node:fs';
+import { findSourceMap, SourceMap } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -42,9 +44,60 @@ export function callerSite() {
   for (const site of stackSites(callerSite)) {
     const file = fileOf(site);
     if (!file || file.startsWith(THIS_DIR) || isLibrary(file)) continue;
-    return { file, line: site.getLineNumber(), column: site.getColumnNumber() };
+    const pos = { file, line: site.getLineNumber(), column: site.getColumnNumber() };
+    if (!isBundled(file)) return pos;
+    // Next.js runs a bundle of your code: map the frame back to your file.
+    const mapped = mapBundled(pos);
+    if (mapped && !isLibrary(mapped.file)) return mapped;
   }
   return siteStore.getStore() ?? NONE;
+}
+
+// --- Bundled code (Next.js) -------------------------------------------------
+//
+// Under `next dev` your route handlers don't run from app/api/…/route.ts but
+// from a bundle: Turbopack writes .next/dev/server/chunks/….js (with a .js.map
+// next to it), webpack evals each module as webpack-internal:///(rsc)/./lib/db.ts
+// with an inline map. Next starts Node with --enable-source-maps, so
+// findSourceMap() knows both; the .map on disk covers the case where it doesn't.
+
+const NEXT_DIR = `${path.sep}.next${path.sep}`;
+const isBundled = (file) => file.includes(NEXT_DIR) || file.startsWith('webpack-internal:');
+
+const diskMaps = new Map(); // bundle file → { mtimeMs, map }
+
+function mapBundled({ file, line, column }) {
+  const map = sourceMapOf(file);
+  if (!map || line == null) return null;
+  const origin = map.findOrigin(line, column ?? 1);
+  const source = origin?.fileName;
+  if (!source || origin.lineNumber == null) return null;
+  // Sources like turbopack:///[turbopack]/… or webpack://next/… are Next's own.
+  let mappedFile;
+  if (source.startsWith('file://')) mappedFile = fileURLToPath(source);
+  else if (path.isAbsolute(source)) mappedFile = source;
+  else return null;
+  return { file: mappedFile, line: origin.lineNumber, column: origin.columnNumber };
+}
+
+function sourceMapOf(file) {
+  try {
+    const known = findSourceMap(file);
+    if (known) return known;
+  } catch {
+    // not a path Node knows — try the disk
+  }
+  if (file.startsWith('webpack-internal:')) return null; // inline maps only
+  try {
+    const { mtimeMs } = fs.statSync(`${file}.map`);
+    const hit = diskMaps.get(file);
+    if (hit?.mtimeMs === mtimeMs) return hit.map;
+    const map = new SourceMap(JSON.parse(fs.readFileSync(`${file}.map`, 'utf8')));
+    diskMaps.set(file, { mtimeMs, map });
+    return map;
+  } catch {
+    return null;
+  }
 }
 
 // True when the code calling us (the first frame that isn't ours) lives in
@@ -78,8 +131,10 @@ function stackSites(below) {
   return sites;
 }
 
+// webpack's eval'd modules have no file name, only the name their
+// //# sourceURL gave them (webpack-internal:///(rsc)/./lib/db.ts).
 function fileOf(site) {
-  const file = site.getFileName();
+  const file = site.getFileName() ?? site.getScriptNameOrSourceURL?.();
   if (!file || file.startsWith('node:')) return null;
   return file.startsWith('file:') ? fileURLToPath(file) : file;
 }

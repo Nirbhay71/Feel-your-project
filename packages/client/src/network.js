@@ -114,8 +114,11 @@ export function withStack(stack, fn) {
   }
 }
 
-// Our own calls (agent, open-in-editor) aren't the app's traffic.
-const isOwnRequest = (url) => url.includes(`${AGENT}/`) || url.includes('/__open-in-editor');
+// Our own calls (agent, open-in-editor) aren't the app's traffic — and
+// neither is Next.js's own: its dev overlay (/__nextjs…), its scripts
+// (/_next/…) and the React Server Component payloads it fetches (?_rsc=…).
+const isOwnRequest = (url) =>
+  url.includes(`${AGENT}/`) || url.includes('/__open-in-editor') || url.includes('/__nextjs') || url.includes('/_next/') || /[?&]_rsc=/.test(url);
 
 // --- fetch ----------------------------------------------------------------
 window.fetch = async function (input, init) {

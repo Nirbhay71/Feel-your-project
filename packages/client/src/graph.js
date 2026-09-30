@@ -92,7 +92,7 @@ export function buildGraph({ entry, requests, possible = [], tableInfo }) {
         kind: 'handler',
         label: h.name ?? 'inline handler',
         sub: `${short(h.file)}:${h.line}`,
-        action: { code: { file: h.file, line: h.line, resolve: 'handler', index: h.index } },
+        action: { code: { file: h.file, line: h.line, resolve: h.direct ? undefined : 'handler', index: h.index } },
       });
       n.depth = Math.max(n.depth, i);
       if (!route.action) route.action = n.action;

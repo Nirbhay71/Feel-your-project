@@ -6,10 +6,12 @@ import _traverse from '@babel/traverse';
 // @babel/traverse is CommonJS; under ESM the function sits on .default.
 export const traverse = _traverse.default ?? _traverse;
 
+// .ts files can't hold JSX, and parsing them as if they could breaks
+// old-style casts: `<User>data` would be read as an unclosed <User> tag.
 export function parseCode(code, file) {
   return parse(code, {
     sourceType: 'module',
-    plugins: /\.tsx?$/.test(file) ? ['jsx', 'typescript'] : ['jsx'],
+    plugins: /\.[mc]?ts$/.test(file) ? ['typescript'] : /\.tsx$/.test(file) ? ['jsx', 'typescript'] : ['jsx'],
   });
 }
 
