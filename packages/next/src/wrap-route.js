@@ -31,7 +31,7 @@ export function wrapRoute(code, file, info, { runtime = '@feel-dev/next/runtime'
   const imports = []; // appended re-export imports
 
   for (const stmt of ast.program.body) {
-    if (stmt.type === 'ExportNamedDeclaration') unexportDeclaration(stmt, s, wanted, wraps) || removeSpecifiers(stmt, code, s, wanted, wraps, imports);
+    if (stmt.type === 'ExportNamedDeclaration') unexportDeclaration(stmt, s, wanted, wraps) || removeSpecifiers(stmt, code, s, wanted, wraps, imports, ast);
     else if (stmt.type === 'ExportDefaultDeclaration' && wanted.includes('default')) unexportDefault(stmt, s, wraps);
   }
   if (!wraps.length) return null;
@@ -71,7 +71,7 @@ function unexportDeclaration(stmt, s, wanted, wraps) {
 }
 
 // export { handler as GET, other }   /   export { GET } from './shared'
-function removeSpecifiers(stmt, code, s, wanted, wraps, imports) {
+function removeSpecifiers(stmt, code, s, wanted, wraps, imports, ast) {
   const ours = [];
   const kept = [];
   for (const spec of stmt.specifiers ?? []) {
@@ -89,7 +89,10 @@ function removeSpecifiers(stmt, code, s, wanted, wraps, imports) {
       imports.push(`import { ${local === 'default' ? 'default' : local} as ${alias} } from ${JSON.stringify(stmt.source.value)};`);
       local = alias;
     }
-    wraps.push({ exported, local, line: spec.loc.start.line, name: exported === 'default' ? spec.local.name : exported });
+    // Point at the function itself when it's in this file (the same line the
+    // static scan reports), else at the export.
+    const line = (!stmt.source && declarationLine(ast, local)) || spec.loc.start.line;
+    wraps.push({ exported, local, line, name: exported === 'default' ? spec.local.name : exported });
   }
 
   // Rewrite the statement with only the specifiers we leave alone, padded
@@ -98,6 +101,19 @@ function removeSpecifiers(stmt, code, s, wanted, wraps, imports) {
   const from = stmt.source ? ` from ${code.slice(stmt.source.start, stmt.source.end)}` : '';
   const rest = kept.length ? `export { ${kept.map((sp) => code.slice(sp.start, sp.end)).join(', ')} }${from};` : '';
   s.overwrite(stmt.start, stmt.end, rest + breaks || ' ');
+}
+
+// The line of a top-level `function name` / `const name =` in the file.
+function declarationLine(ast, name) {
+  for (let stmt of ast.program.body) {
+    if (stmt.type === 'ExportNamedDeclaration' && stmt.declaration) stmt = stmt.declaration;
+    if (stmt.type === 'FunctionDeclaration' && stmt.id?.name === name) return stmt.loc.start.line;
+    if (stmt.type === 'VariableDeclaration') {
+      const d = stmt.declarations.find((x) => x.id.type === 'Identifier' && x.id.name === name);
+      if (d) return d.loc.start.line;
+    }
+  }
+  return null;
 }
 
 // Pages Router: export default function handler(req, res) {…}
