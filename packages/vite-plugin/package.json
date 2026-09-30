@@ -1,7 +1,7 @@
 {
   "name": "@feel-dev/vite-plugin",
   "version": "0.2.0",
-  "description": "Alt + right-click any UI element to see the full stack behind it: component \u2192 frontend code \u2192 API \u2192 backend handler \u2192 SQL \u2192 tables.",
+  "description": "Alt + right-click any UI element to see the full stack behind it: component → frontend code → API → backend handler → SQL → tables.",
   "keywords": [
     "vite-plugin",
     "react",

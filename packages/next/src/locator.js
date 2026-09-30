@@ -83,6 +83,7 @@ async function loadMap(fetch, url) {
 //   file:///app/lib/api.js                                   → /app/lib/api.js
 //   turbopack:///[project]/lib/api.js                        → <root>/lib/api.js
 //   webpack://_N_E/./lib/api.js?1234                         → <root>/lib/api.js
+//   webpack://_N_E/lib/api.js                                → <root>/lib/api.js
 //   webpack://./lib/api.js                                   → <root>/lib/api.js
 //   webpack-internal:///(app-pages-browser)/./lib/api.js     → <root>/lib/api.js
 //   webpack://javascript/auto|./node_modules/react-dom/…|app-pages-browser → <root>/node_modules/react-dom/…
@@ -104,7 +105,16 @@ export function normalizeSource(source, root) {
     rest = source.slice('webpack://'.length);
     const parts = rest.split('|');
     if (parts.length === 3) rest = parts[1]; // javascript/auto|<module>|<layer>
-    else if (!/^\.\.?\//.test(rest)) rest = rest.slice(rest.indexOf('/') + 1); // drop the namespace
+    else if (!/^\.\.?\//.test(rest)) {
+      // webpack://<namespace>/<module>. "next" is Next's own code and
+      // webpack/… the bundler runtime; for the rest the "./" may already
+      // have been normalised away (webpack://_N_E/lib/api.js).
+      const slash = rest.indexOf('/');
+      const namespace = rest.slice(0, slash);
+      rest = rest.slice(slash + 1);
+      if (namespace === 'next' || rest.startsWith('webpack/')) return null;
+      if (!/^\.\.?\//.test(rest)) rest = `./${rest}`;
+    }
   }
   if (rest != null) {
     rest = rest.split('?')[0].replace(/^\([^)]*\)\//, ''); // (app-pages-browser)/
