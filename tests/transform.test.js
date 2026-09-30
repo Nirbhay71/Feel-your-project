@@ -37,7 +37,8 @@ test('tagJsx: data-src on DOM tags, __feelSrc footer, every original line intact
   assert.equal(untag(out.code), LIST);
   const lines = out.code.split('\n');
   assert.equal(lines[0], "'use client';", "'use client' stays the first statement");
-  assert.equal(out.map.sources[0], file('components/ItemList.jsx'));
+  // Sourcemaps use forward slashes, also on Windows.
+  assert.equal(out.map.sources[0], file('components/ItemList.jsx').replaceAll('\\', '/'));
 });
 
 test('Vite plugin and Next loader tag .jsx / .tsx files identically', () => {

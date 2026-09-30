@@ -247,7 +247,8 @@ async function request(url) {
   try {
     const res = await fetch(`http://127.0.0.1:${listening.address().port}${url}`);
     const body = await res.text();
-    return { queries: JSON.parse(decodeURIComponent(res.headers.get('x-feel-route'))).queries, body: body ? JSON.parse(body) : null };
+    const route = JSON.parse(decodeURIComponent(res.headers.get('x-feel-route')));
+    return { queries: route.queries, truncated: route.truncated ?? 0, body: body ? JSON.parse(body) : null };
   } finally {
     await new Promise((resolve) => listening.close(resolve));
   }
@@ -378,11 +379,13 @@ test('event style: listeners run in the request that sent the query', async () =
 });
 
 test('callbacks stay in their request even when queries are over the cap', async () => {
-  const [a, b] = await Promise.all([queriesOf('/over-cap?id=ra'), queriesOf('/over-cap?id=rb')]);
-  assert.equal(a.length, 50);
-  assert.equal(b.length, 50);
-  assert.ok(a.every((q) => q.sql === 'SELECT 1'));
-  assert.ok(b.every((q) => q.sql === 'SELECT 1'));
+  const [a, b] = await Promise.all([request('/over-cap?id=ra'), request('/over-cap?id=rb')]);
+  // 50 recorded each; the header size cap may leave the last few out (how many
+  // depends on how long this file's path is), but they're counted as truncated.
+  for (const r of [a, b]) {
+    assert.equal(r.queries.length + r.truncated, 50);
+    assert.ok(r.queries.every((q) => q.sql === 'SELECT 1'));
+  }
 });
 
 // --- No callback: events, streams, throws -----------------------------------------
