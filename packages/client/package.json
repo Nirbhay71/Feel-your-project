@@ -1,7 +1,7 @@
 {
   "name": "@feel-dev/client",
-  "version": "0.1.0",
-  "description": "Browser side of Feel: Alt + right-click selection, request capture and the viewer panel. Injected by @feel-dev/vite-plugin.",
+  "version": "0.2.0",
+  "description": "Browser side of Feel: Alt + right-click selection, request capture and the viewer panel. Injected by @feel-dev/vite-plugin or @feel-dev/next.",
   "license": "MIT",
   "author": "Nirbhay71",
   "repository": {
@@ -15,7 +15,8 @@
   },
   "type": "module",
   "exports": {
-    ".": "./src/index.js"
+    ".": "./src/index.js",
+    "./axios": "./src/axios.js"
   },
   "files": [
     "src",

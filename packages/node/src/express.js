@@ -10,7 +10,12 @@
 import { randomUUID } from 'node:crypto';
 import { als, callerSite } from './context.js';
 
-const HEADER = 'X-Feel-Route';
+export const HEADER = 'X-Feel-Route';
+// Node (and so Vite's dev proxy) refuses responses whose headers add up to
+// more than 16 KB, which would break the app's own request — so ours stays
+// under 12 KB, leaving room for the app's headers.
+const HEADER_BUDGET = 12 * 1024;
+const SHORT_SQL = 300; // characters per query, when the header is too big
 const METHODS = ['get', 'post', 'put', 'patch', 'delete', 'all'];
 
 export function instrumentExpress(express) {
@@ -74,14 +79,33 @@ function routePath(req) {
 // Node calls res.writeHead() right before headers are sent — even when the
 // app only calls res.json() / res.end(). That's the last moment to add ours,
 // and by then the handler's queries have finished.
-function hookHeaders(res, ctx) {
+export function hookHeaders(res, ctx) {
   const writeHead = res.writeHead;
   res.writeHead = function (...args) {
     if (!res.headersSent) {
-      res.setHeader(HEADER, encodeURIComponent(JSON.stringify(ctx)));
+      res.setHeader(HEADER, headerValue(ctx));
       // Lets the browser read the header even if the API is on another origin.
       res.setHeader('Access-Control-Expose-Headers', HEADER);
     }
     return writeHead.apply(this, args);
   };
+}
+
+// The header, kept under HEADER_BUDGET: a long list of long queries (an ORM
+// easily writes 2,000-character SQL, and every backtick becomes %60) first
+// gets each query's SQL shortened, then loses queries from the end.
+// `truncated` says how many were left out, so the panel can mention them.
+export function headerValue(ctx) {
+  const encode = (value) => encodeURIComponent(JSON.stringify(value));
+  const full = encode(ctx);
+  if (full.length <= HEADER_BUDGET) return full;
+
+  const queries = ctx.queries.map((q) => (q.sql.length > SHORT_SQL ? { ...q, sql: `${q.sql.slice(0, SHORT_SQL)}…` } : q));
+  let value;
+  for (let kept = queries.length; kept >= 0; kept--) {
+    const dropped = queries.length - kept;
+    value = encode({ ...ctx, queries: queries.slice(0, kept), ...(dropped && { truncated: dropped }) });
+    if (value.length <= HEADER_BUDGET) break;
+  }
+  return value;
 }

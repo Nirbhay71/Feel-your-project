@@ -1,11 +1,18 @@
 {
   "name": "@feel-dev/node",
-  "version": "0.1.0",
-  "description": "Backend side of Feel: tells the browser which Express route, handler and SQL queries answered each request (dev only).",
+  "version": "0.2.0",
+  "description": "Backend side of Feel: tells the browser which Express route or Next.js route handler, and which SQL queries, answered each request — raw pg or mysql2, Prisma or Drizzle (dev only).",
   "keywords": [
     "express",
+    "nextjs",
     "pg",
     "postgres",
+    "mysql",
+    "mysql2",
+    "mariadb",
+    "prisma",
+    "drizzle",
+    "orm",
     "devtools",
     "tracing"
   ],
@@ -23,7 +30,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.js",
-    "./register": "./src/register.js"
+    "./register": "./src/register.js",
+    "./next": "./src/next.js"
   },
   "files": [
     "src",
@@ -35,13 +43,21 @@
   },
   "peerDependencies": {
     "express": ">=4",
-    "pg": ">=8"
+    "pg": ">=8",
+    "mysql2": ">=3",
+    "drizzle-orm": ">=0.30"
   },
   "peerDependenciesMeta": {
     "express": {
       "optional": true
     },
     "pg": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "drizzle-orm": {
       "optional": true
     }
   }

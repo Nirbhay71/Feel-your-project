@@ -16,10 +16,8 @@
 //
 // Code comes from the agent (GET /__feel/source) and is highlighted with Shiki.
 
-import { getRequests, onRequestsChange, findRequest } from './network.js';
+import { getRequests, onRequestsChange, findRequest, agentUrl } from './network.js';
 import { buildGraph, renderGraph, GRAPH_CSS } from './graph.js';
-
-const AGENT = '/__feel';
 
 const host = document.createElement('feel-panel');
 const shadow = host.attachShadow({ mode: 'open' });
@@ -316,7 +314,7 @@ function fetchPossible({ file, component }) {
   const hit = possibleCache.get(key);
   if (hit && Date.now() - hit.at < 5000) return hit.promise;
   const q = new URLSearchParams({ file, component });
-  const promise = fetch(`${AGENT}/possible?${q}`)
+  const promise = fetch(agentUrl(`possible?${q}`))
     .then((res) => (res.ok ? res.json() : { calls: [] }))
     .then((body) => body.calls)
     .catch(() => []);
@@ -423,7 +421,7 @@ const tableCache = new Map(); // name → { at, promise }
 function fetchTableInfo(name) {
   const hit = tableCache.get(name);
   if (hit && Date.now() - hit.at < 2000) return hit.promise;
-  const promise = fetch(`${AGENT}/db/table?name=${encodeURIComponent(name)}`)
+  const promise = fetch(agentUrl(`db/table?name=${encodeURIComponent(name)}`))
     .then((res) => (res.ok ? res.json() : null))
     .catch(() => null);
   tableCache.set(name, { at: Date.now(), promise });
@@ -510,7 +508,9 @@ function renderRequest(req, count) {
           className: 'be',
           textContent: h.name ?? 'inline handler',
           title: `registered at ${h.file}:${h.line}`,
-          onclick: () => showCode({ file: h.file, line: h.line, resolve: 'handler', index: h.index }),
+          // direct: the line *is* the handler (a Next.js route export) — there's
+          // no router.get(…) call to follow from it.
+          onclick: () => showCode({ file: h.file, line: h.line, resolve: h.direct ? undefined : 'handler', index: h.index }),
         }),
       );
     }
@@ -520,6 +520,12 @@ function renderRequest(req, count) {
 
   const rows = [head, frontend, backend];
   for (const q of req.backend?.queries ?? []) rows.push(renderQuery(q));
+  // The backend left some out to keep its response header small.
+  const hidden = req.backend?.truncated;
+  if (hidden) {
+    const note = `(${hidden} more quer${hidden === 1 ? 'y' : 'ies'} not shown)`;
+    rows.push(el('div', { className: 'hop' }, el('span', { className: 'tag', textContent: 'Database' }), el('span', { className: 'muted', textContent: note })));
+  }
   if (req.changes?.length) rows.push(renderRequestChanges(req.changes));
   return el('div', { className: 'req' }, ...rows);
 }
@@ -553,12 +559,15 @@ function originOf(req) {
 function renderQuery(q) {
   const row = el('div', { className: 'hop' }, el('span', { className: 'tag', textContent: 'Database' }));
   row.append(
-    el('button', {
-      className: 'be',
-      textContent: `${q.file.split(/[\\/]/).pop()}:${q.line}`,
-      title: `Query sent from ${q.file}:${q.line}`,
-      onclick: () => showCode({ file: q.file, line: q.line }),
-    }),
+    q.file
+      ? el('button', {
+          className: 'be',
+          textContent: `${q.file.split(/[\\/]/).pop()}:${q.line}`,
+          title: `Query sent from ${q.file}:${q.line}`,
+          onclick: () => showCode({ file: q.file, line: q.line }),
+        })
+      : // Sent by an ORM from inside its own code (e.g. a Prisma batch transaction)
+        el('span', { className: 'muted', textContent: 'ORM', title: 'Sent by the ORM — no line in your code on the stack' }),
     el('code', { className: 'sql', textContent: q.sql.replace(/\s+/g, ' ').trim(), title: q.sql.trim() }),
   );
   for (const t of q.tables ?? []) {
@@ -589,7 +598,7 @@ async function showTable(name) {
   const token = (showCode.token = {});
   codeBox.innerHTML = '<div class="status-msg">Loading…</div>';
 
-  const res = await fetch(`${AGENT}/db/table?name=${encodeURIComponent(name)}`);
+  const res = await fetch(agentUrl(`db/table?name=${encodeURIComponent(name)}`));
   const table = await res.json();
   if (showCode.token !== token || !current) return;
   if (!res.ok) {
@@ -729,7 +738,7 @@ function describeChange(c) {
 
 async function enableAudit(tableName) {
   codeBox.innerHTML = '<div class="status-msg">Installing triggers…</div>';
-  const res = await fetch(`${AGENT}/db/audit`, { method: 'POST', headers: { 'X-Feel': '1' } });
+  const res = await fetch(agentUrl(`db/audit`), { method: 'POST', headers: { 'X-Feel': '1' } });
   if (!res.ok) {
     codeBox.replaceChildren(el('div', { className: 'status-msg', textContent: (await res.json()).error }));
     return;
@@ -753,7 +762,7 @@ async function fetchReach({ file, component }) {
   const key = `${file}#${component}`;
   if (!reachCache.has(key)) {
     const q = new URLSearchParams({ file, component });
-    const res = await fetch(`${AGENT}/reach?${q}`);
+    const res = await fetch(agentUrl(`reach?${q}`));
     const body = res.ok ? await res.json() : {};
     reachCache.set(key, { functions: new Set(body.functions), direct: new Set(body.direct) });
   }
@@ -787,7 +796,7 @@ async function showCode(params) {
 async function fetchSource(params) {
   const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null)).toString();
   if (!sourceCache.has(q)) {
-    const res = await fetch(`${AGENT}/source?${q}`);
+    const res = await fetch(agentUrl(`source?${q}`));
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? res.statusText);
     sourceCache.set(q, body);
@@ -821,11 +830,12 @@ function scrollToHighlight() {
 }
 
 // Vite's dev server has a built-in /__open-in-editor endpoint that opens a
-// file:line in whichever editor is running (VS Code, WebStorm, …).
+// file:line in whichever editor is running (VS Code, WebStorm, …); Next.js
+// has /__nextjs_launch-editor. The agent says which one (openUrl).
 function openInEditor() {
   const shown = current?.shown;
   if (!shown?.absPath) return; // e.g. a table view — nothing to open
-  fetch(`/__open-in-editor?file=${encodeURIComponent(`${shown.absPath}:${shown.highlightLine}`)}`);
+  fetch(shown.openUrl ?? `/__open-in-editor?file=${encodeURIComponent(`${shown.absPath}:${shown.highlightLine}`)}`);
 }
 
 shadow.querySelector('.open-editor').onclick = openInEditor;

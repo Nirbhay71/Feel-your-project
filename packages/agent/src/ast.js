@@ -6,10 +6,12 @@ import _traverse from '@babel/traverse';
 // @babel/traverse is CommonJS; under ESM the function sits on .default.
 export const traverse = _traverse.default ?? _traverse;
 
+// .ts files can't hold JSX, and parsing them as if they could breaks
+// old-style casts: `<User>data` would be read as an unclosed <User> tag.
 export function parseCode(code, file) {
   return parse(code, {
     sourceType: 'module',
-    plugins: /\.tsx?$/.test(file) ? ['jsx', 'typescript'] : ['jsx'],
+    plugins: /\.[mc]?ts$/.test(file) ? ['typescript'] : /\.tsx$/.test(file) ? ['jsx', 'typescript'] : ['jsx'],
   });
 }
 
@@ -121,6 +123,17 @@ export function findTopLevelFunction(ast, name) {
 
   if (!found && defaultLocal) return findTopLevelFunction(ast, defaultLocal);
   return found;
+}
+
+// Every name a declaration binds: GET, { GET, POST: post }, [a, ...rest], { x = 1 }.
+export function boundNames(node) {
+  if (!node) return [];
+  if (node.type === 'Identifier') return [node.name];
+  if (node.type === 'ObjectPattern') return node.properties.flatMap((p) => boundNames(p.type === 'RestElement' ? p.argument : p.value));
+  if (node.type === 'ArrayPattern') return node.elements.flatMap(boundNames);
+  if (node.type === 'AssignmentPattern') return boundNames(node.left);
+  if (node.type === 'RestElement') return boundNames(node.argument);
+  return [];
 }
 
 // Calls that take a callback but return something that isn't that callback.

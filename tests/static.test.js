@@ -87,3 +87,56 @@ test('cjs: route registration → the controller function that handles it', asyn
   assert.equal(path.relative(CJS, target.file).split(path.sep).join('/'), 'server/controllers/items.js');
   assert.equal(target.line, 8);
 });
+
+// --- ORM fixture (Prisma + Drizzle, no raw SQL) ------------------------------------
+
+const ORM = path.join(HERE, 'fixtures', 'orm-app');
+const orm = (file, component) => callsOf(ORM, path.join(ORM, 'client'), file, component);
+
+test('orm: Drizzle chains, a namespace-imported schema, re-exports and db.query', async () => {
+  assert.deepEqual(await orm('src/Orders.jsx', 'Orders'), [
+    { call: 'GET /api/orders', route: 'GET /api/orders', handler: null, tables: ['app_users', 'orders'] },
+    { call: 'GET /api/users/*', route: 'GET /api/users/:id', handler: null, tables: ['app_users'] },
+    { call: 'POST /api/orders', route: 'POST /api/orders', handler: null, tables: ['orders✎', 'products✎'] },
+  ]);
+});
+
+test('orm: Prisma models → tables from schema.prisma (@@map)', async () => {
+  assert.deepEqual(await orm('src/Customers.jsx', 'Customers'), [
+    { call: 'DELETE /api/customers/*', route: 'DELETE /api/customers/:id', handler: null, tables: ['customers✎', 'order_items✎'] },
+    { call: 'GET /api/customers', route: 'GET /api/customers', handler: null, tables: ['customers'] },
+  ]);
+});
+
+test('orm: one Drizzle chain is one query, labelled as written', async () => {
+  const [call] = await possibleCalls({
+    abs: path.join(ORM, 'client', 'src', 'Orders.jsx'),
+    component: 'Orders',
+    rootDir: ORM,
+    display: (abs) => abs,
+  });
+  assert.equal(call.route.queries.length, 1);
+  assert.match(call.route.queries[0].sql, /^db \.select\(\) \.from\(orders\) \.leftJoin\(users/);
+});
+
+// --- mysql2 fixture (raw pool.execute / pool.query, Drizzle's mysql2 driver) ----------
+
+const MYSQL = path.join(HERE, 'fixtures', 'mysql-app');
+const mysqlApp = (file, component) => callsOf(MYSQL, path.join(MYSQL, 'client'), file, component);
+
+test('mysql: pool.execute and pool.query({ sql }) SQL; db.execute(sql`…`) and bus.execute are not raw SQL', async () => {
+  assert.deepEqual(await mysqlApp('src/Users.jsx', 'Users'), [
+    { call: 'GET /api/lookup', route: 'GET /api/lookup', handler: null, tables: ['archived_orders', 'orders', 'products', 'users✎'] },
+    { call: 'GET /api/stats', route: 'GET /api/stats', handler: null, tables: ['orders'] },
+    { call: 'GET /api/users', route: 'GET /api/users', handler: null, tables: ['users'] },
+  ]);
+});
+
+test('mysql: CALL and (SELECT …) count as SQL; bus.execute(\'delete-user\') does not', async () => {
+  const abs = path.join(MYSQL, 'client', 'src', 'Users.jsx');
+  const calls = await possibleCalls({ abs, component: 'Users', rootDir: MYSQL, display: (f) => f });
+  const sqlOf = (url) => calls.find((c) => c.url === url).route.queries.map((q) => q.sql);
+  assert.ok(sqlOf('/api/lookup').includes('CALL refresh_stats(?)'));
+  assert.ok(sqlOf('/api/lookup').includes('(SELECT id FROM archived_orders) UNION (SELECT id FROM orders)'));
+  assert.deepEqual(sqlOf('/api/users'), ['SELECT * FROM users']);
+});

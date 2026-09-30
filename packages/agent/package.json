@@ -1,6 +1,6 @@
 {
   "name": "@feel-dev/agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Node side of Feel: source lookup, stack mapping, static call graph, SQL and database inspection. Used by @feel-dev/vite-plugin.",
   "license": "MIT",
   "author": "Nirbhay71",
@@ -28,7 +28,8 @@
   "dependencies": {
     "@babel/parser": "^7.26.0",
     "@babel/traverse": "^7.26.0",
-    "@jridgewell/trace-mapping": "^0.3.25",
+    "@jridgewell/trace-mapping": "^0.3.31",
+    "magic-string": "^0.30.0",
     "pg": "^8.13.0",
     "pgsql-ast-parser": "^12.0.0"
   }

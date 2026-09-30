@@ -1,0 +1,19 @@
+datasource db {
+  provider = "postgresql"
+}
+
+model Customer {
+  id     Int         @id @default(autoincrement())
+  name   String
+  orders OrderItem[]
+
+  @@map("customers")
+}
+
+model OrderItem {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  @@map(name: "order_items")
+}

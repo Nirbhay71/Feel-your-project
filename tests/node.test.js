@@ -61,3 +61,18 @@ test('every request gets its own id', async () => {
     assert.notEqual(route(a).id, route(b).id);
   });
 });
+
+test('a long list of long queries is trimmed to keep the header small', async () => {
+  const { headerValue } = await import('../packages/node/src/express.js');
+  const sql = `select \`users\`.\`id\`, \`users\`.\`name\` from \`users\` where ${'`users`.`id` = ? or '.repeat(100)}1`;
+  const ctx = { id: 'x', method: 'GET', path: '/big', handlers: [], queries: Array.from({ length: 50 }, (_, i) => ({ sql: `${i} ${sql}`, file: '/app/db.js', line: i, column: 1, duration: 1, rowCount: 0, error: null })) };
+  const value = headerValue(ctx);
+  assert.ok(value.length < 12 * 1024, `${value.length} bytes`);
+  const decoded = JSON.parse(decodeURIComponent(value));
+  assert.ok(decoded.truncated > 0);
+  assert.equal(decoded.queries.length + decoded.truncated, 50);
+  assert.ok(decoded.queries.every((q, i) => q.sql.startsWith(`${i} select`) && q.sql.length <= 301));
+
+  const small = { ...ctx, queries: ctx.queries.slice(0, 2).map((q) => ({ ...q, sql: 'SELECT 1' })) };
+  assert.equal(headerValue(small), encodeURIComponent(JSON.stringify(small))); // small headers: unchanged
+});

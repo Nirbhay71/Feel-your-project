@@ -1,0 +1,74 @@
+{
+  "name": "@feel-dev/next",
+  "version": "0.2.0",
+  "description": "Feel for Next.js: Alt + right-click any UI element to see the full stack behind it — component → frontend code → route handler → SQL → tables.",
+  "keywords": [
+    "nextjs",
+    "next",
+    "react",
+    "devtools",
+    "tracing",
+    "debugging"
+  ],
+  "license": "MIT",
+  "author": "Nirbhay71",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nirbhay71/Feel-your-project.git",
+    "directory": "packages/next"
+  },
+  "homepage": "https://github.com/Nirbhay71/Feel-your-project#readme",
+  "bugs": {
+    "url": "https://github.com/Nirbhay71/Feel-your-project/issues"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./client": {
+      "types": "./types/side-effect.d.ts",
+      "development": "./src/client.js",
+      "default": "./src/empty.js"
+    },
+    "./agent": {
+      "types": "./types/agent.d.ts",
+      "default": "./src/agent.js"
+    },
+    "./register": {
+      "types": "./types/side-effect.d.ts",
+      "default": "./src/register.js"
+    },
+    "./runtime": "./src/runtime.js",
+    "./loader": "./src/loader.cjs",
+    "./axios": "./src/empty.js",
+    "./axios-patch": "./src/axios-patch.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "dependencies": {
+    "@feel-dev/agent": "^0.2.0",
+    "@feel-dev/client": "^0.2.0",
+    "@feel-dev/node": "^0.2.0",
+    "@jridgewell/trace-mapping": "^0.3.31",
+    "magic-string": "^0.30.0"
+  },
+  "peerDependencies": {
+    "next": ">=16"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": true
+    }
+  },
+  "types": "./types/index.d.ts"
+}

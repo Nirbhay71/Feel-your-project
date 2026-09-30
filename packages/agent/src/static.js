@@ -12,9 +12,11 @@
 //      calls, and work out method + URL — following parameters back to the
 //      callers that pass literals (getJson(url) ← fetchSales: getJson('/api/sales')).
 //   2. backendRoutes: scan the project for Express routes and app.use()
-//      mounts to get each route's full path.
+//      mounts to get each route's full path, and for Next.js route files
+//      (app/**/route.ts, pages/api/**, see next-routes.js).
 //   3. matchRoute: URL pattern ↔ route path (":id" and "*" are wildcards).
-//   4. routeQueries: walk the handler's call graph for pool.query('…') SQL.
+//   4. routeQueries: walk the handler's call graph for pool.query('…') /
+//      pool.execute('…') SQL and Prisma / Drizzle calls (orm.js).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,6 +25,8 @@ import { loadFile, importTarget, refTarget, resolveImport } from './files.js';
 import { collectFunctions } from './graph.js';
 import { resolveHandler } from './handler.js';
 import { tablesInSql } from './sql.js';
+import { ormQuery } from './orm.js';
+import { findNextRoot, nextRouteInfo, nextRoutesIn } from './next-routes.js';
 
 export async function possibleCalls({ abs, component, rootDir, display }) {
   const loaded = await loadFile(abs).catch(() => null);
@@ -51,7 +55,7 @@ export async function possibleCalls({ abs, component, rootDir, display }) {
         line: n.fn.node.loc.start.line,
       })),
       site: { file: display(call.site.file), line: call.site.line },
-      route: route && (await describeRoute(route)),
+      route: route && (await describeRoute(route, rootDir)),
     });
   }
   return out;
@@ -431,10 +435,19 @@ async function scanRoutes(rootDir) {
   const routes = []; // { file, varName, method, path, line, handlerIndex }
   const mounts = []; // { file, varName, prefix, child: { file } | { file, varName } }
   const apps = new Set(); // "file#var" created with express()
+  const nextRoutes = []; // Next.js routes are whole files — no prefixes to work out
 
   for (const file of listFiles(rootDir)) {
     const loaded = await loadFile(file).catch(() => null);
-    if (!loaded?.ast || !/\b(express|Router)\b/.test(loaded.code)) continue;
+    if (!loaded?.ast) continue;
+
+    const nextRoot = findNextRoot(file, rootDir);
+    const info = nextRoot && nextRouteInfo(path.relative(nextRoot, file).split(path.sep).join('/'));
+    if (info) {
+      nextRoutes.push(...(await nextRoutesIn(file, loaded.ast, info)));
+      continue;
+    }
+    if (!/\b(express|Router)\b/.test(loaded.code)) continue;
 
     // const app = express()   const router = Router()   const r = express.Router()
     const routers = new Set();
@@ -496,10 +509,11 @@ async function scanRoutes(rootDir) {
     }
   }
 
-  return routes.flatMap((r) => {
+  const expressRoutes = routes.flatMap((r) => {
     const own = prefixes.get(`${r.file}#${r.varName}`) ?? prefixes.get(r.file) ?? new Set(['']);
     return [...own].map((prefix) => ({ ...r, fullPath: joinPath(prefix, r.path) }));
   });
+  return [...expressRoutes, ...nextRoutes];
 }
 
 // require('./routes/x') written inline → './routes/x'
@@ -527,19 +541,31 @@ const joinPath = (a, b) => `/${[a, b].join('/').split('/').filter(Boolean).join(
 // URL pattern from the frontend ↔ route path from the backend.
 //   "/api/users/*"  ↔  "/api/users/:id"   ✓
 //   "*/sales"       ↔  "/api/sales"       ✓ (a leading * is an unknown base URL)
+//   "*/sales"       ↔  "/sales"           ✓ (…which may be empty)
 function matchRoute(call, routes) {
   const url = call.url.replace(/^https?:\/\/[^/]+/, '').split(/[?#]/)[0];
   const segs = url.split('/').filter(Boolean);
   const candidates = routes.filter((r) => (r.method === call.method || r.method === 'ALL') && segmentsMatch(segs, r.fullPath.split('/').filter(Boolean)));
-  // Prefer the most specific route (fewest :params).
-  candidates.sort((a, b) => (a.fullPath.match(/:/g)?.length ?? 0) - (b.fullPath.match(/:/g)?.length ?? 0));
+  // Prefer the most specific route: catch-alls (Express's app.get('*'),
+  // Next's [...slug]) last, then the fewest :params. The sort is stable, so
+  // equally specific routes keep the order they were found in.
+  candidates.sort((a, b) => count(a.fullPath, WILDCARD) - count(b.fullPath, WILDCARD) || count(a.fullPath, /:/g) - count(b.fullPath, /:/g));
   return candidates[0] ?? null;
 }
 
+const WILDCARD = /(?:^|\/)\*/g; // a segment that is (or starts with) *
+const count = (text, pattern) => text.match(pattern)?.length ?? 0;
+
 function segmentsMatch(url, route) {
   if (url[0]?.startsWith('*') && url[0] !== '*') url = ['*', ...url.slice(1)];
-  if (url[0] === '*' && url.length <= route.length) {
-    // leading * = base URL: try it against every possible number of leading segments
+  // A trailing * in the route (Next's [...slug]) takes one or more segments.
+  if (route.at(-1) === '*' && url.length >= route.length && url.length > 0) {
+    if (segmentsMatch(url.slice(0, route.length - 1), route.slice(0, -1))) return true;
+  }
+  // A leading * in the URL is an unknown base (`${BASE}/api/x`), and a base
+  // may well be empty: it stands for any number of segments, zero included.
+  if (url[0] === '*' && url.length <= route.length + 1) {
+    // try it against every possible number of leading segments
     for (let skip = 0; skip <= route.length - url.length + 1; skip++) {
       if (segmentsMatch(url.slice(1), route.slice(skip))) return true;
     }
@@ -550,11 +576,13 @@ function segmentsMatch(url, route) {
 
 // --- 4. Route → handler → SQL -----------------------------------------------------
 
-async function describeRoute(route) {
-  const target = (await resolveHandler(route.file, route.line, route.handlerIndex).catch(() => null)) ?? {
-    file: route.file,
-    line: route.line,
-  };
+async function describeRoute(route, rootDir) {
+  // Next.js routes already point at their handler (the exported function).
+  const target = route.handlerTarget ??
+    (await resolveHandler(route.file, route.line, route.handlerIndex).catch(() => null)) ?? {
+      file: route.file,
+      line: route.line,
+    };
   const loaded = await loadFile(target.file).catch(() => null);
   const fn = loaded?.ast && functionAtLine(loaded.ast, target.line);
 
@@ -563,24 +591,29 @@ async function describeRoute(route) {
     path: route.fullPath,
     file: route.file, // where it's registered (router.get…), absolute like runtime
     line: route.line,
-    handler: { file: target.file, line: target.line, name: (fn && functionName(fn)) ?? null, index: route.handlerIndex },
-    queries: fn ? await queriesIn(target.file, fn) : [],
+    handler: { file: target.file, line: target.line, name: (fn && functionName(fn)) ?? null, index: route.handlerIndex, direct: !!route.direct },
+    queries: fn ? await queriesIn(target.file, fn, rootDir) : [],
   };
 }
 
-// Every db.query('SQL') / pool.query(`SQL`) reachable from the handler.
-async function queriesIn(file, fn) {
+// Every db.query('SQL') / pool.query(`SQL`) / pool.execute('SQL') reachable
+// from the handler, and every Prisma / Drizzle call (see orm.js).
+async function queriesIn(file, fn, rootDir) {
   const out = [];
   const seen = new Set();
   for (const node of await collectFunctions(file, fn)) {
+    const candidates = []; // possible ORM calls — resolving their tables reads other files
     node.fn.traverse({
       CallExpression(p) {
         const c = p.node.callee;
-        if (c.type !== 'MemberExpression' || c.property.name !== 'query') return;
-        const arg = p.get('arguments')[0];
-        let sql = null;
-        if (arg?.isStringLiteral()) sql = arg.node.value;
-        else if (arg?.isTemplateLiteral()) sql = arg.node.quasis.map((q) => q.value.cooked).join('0');
+        if (c.type !== 'MemberExpression') return;
+        const method = c.property.name;
+        if (!RAW_SQL.has(method)) return void candidates.push(p);
+        const sql = sqlArg(p.get('arguments')[0]);
+        // .execute() is also Drizzle's db.execute(sql`…`) and many a
+        // non-database method (bus.execute('CreateUser')) — only SQL-looking
+        // text counts, the rest goes to the ORM check like any other call.
+        if (method === 'execute' && !LOOKS_SQL.test(sql ?? '')) return void candidates.push(p);
         if (!sql) return;
         const key = `${node.file}:${p.node.loc.start.line}`;
         if (seen.has(key)) return;
@@ -588,6 +621,54 @@ async function queriesIn(file, fn) {
         out.push({ sql, file: node.file, line: p.node.loc.start.line, tables: tablesInSql(sql) });
       },
     });
+    if (!candidates.length) continue;
+    const { code } = await loadFile(node.file);
+    // One entry per chain: db.select().from(users).leftJoin(orders, …) → users + orders.
+    // The outermost call of a chain comes first, so its label covers the rest.
+    const chains = new Map(); // chain's outermost call → entry
+    for (const p of candidates) {
+      const orm = await ormQuery(p, node.file, code, rootDir);
+      if (!orm) continue;
+      const top = chainTop(p);
+      const entry = chains.get(top);
+      if (entry) {
+        for (const t of orm.tables) if (!entry.tables.some((e) => e.name === t.name)) entry.tables.push(t);
+        continue;
+      }
+      const key = `${node.file}:${p.node.loc.start.line}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const created = { ...orm, file: node.file, line: p.node.loc.start.line };
+      chains.set(top, created);
+      out.push(created);
+    }
   }
   return out;
+}
+
+// Raw SQL methods: pg's .query(), mysql2's .query() and .execute().
+const RAW_SQL = new Set(['query', 'execute']);
+// Starts with a SQL keyword and then whitespace — so 'delete-user' doesn't
+// count — optionally inside a parenthesis: (SELECT …) UNION (SELECT …).
+const LOOKS_SQL = /^\s*\(?\s*(select|insert|update|delete|replace|with|call)\s/i;
+
+// The SQL text passed to query() / execute(), when it's written right there:
+//   'SELECT …'   `SELECT …`   { sql: 'SELECT …', values }   (mysql2 options)
+// Plain templates only — sql`…` (a tagged template) is Drizzle's, not text.
+function sqlArg(arg) {
+  if (arg?.isObjectExpression()) arg = propertyOf(arg, 'sql');
+  if (arg?.isStringLiteral()) return arg.node.value;
+  if (arg?.isTemplateLiteral()) return arg.node.quasis.map((q) => q.value.cooked).join('0');
+  return null;
+}
+
+// a.b().c().d() — the outermost call of the chain a call sits in.
+function chainTop(p) {
+  let top = p.node;
+  let cur = p;
+  while (cur.parentPath?.isMemberExpression({ object: cur.node }) && cur.parentPath.parentPath?.isCallExpression({ callee: cur.parentPath.node })) {
+    cur = cur.parentPath.parentPath;
+    top = cur.node;
+  }
+  return top;
 }
