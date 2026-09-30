@@ -33,6 +33,8 @@ Every step opens the actual code. Calls a component *could* make but hasn't yet
   backend handler → SQL queries → tables → related tables
 - **Code viewer** at every step, and "Open in editor"
 - **Possible calls**: static analysis of calls not made yet (dashed in the graph)
+- **ORMs**: Prisma and Drizzle queries show their SQL, tables and the line in your code
+  that asked for them — also for calls not made yet
 - **Database view** (Postgres): columns, keys, foreign keys both ways, and — opt-in —
   every change, linked to the request and component that caused it
 - **Dev only**: nothing is added to production builds
@@ -68,12 +70,14 @@ Full setup guide: [packages/vite-plugin/README.md](packages/vite-plugin/README.m
 | Data fetching | `fetch`, axios, `axios.create` instances (incl. interceptors), wrapper functions, custom hooks, API objects (`userApi.getAll()`), React Query, SWR |
 | Imports | relative, Vite `resolve.alias`, tsconfig/jsconfig `paths` + `baseUrl`, `package.json` `"imports"` |
 | Backend | Express 4 and 5 — ES modules or CommonJS, routers, `app.use` mounts, controllers |
-| Database | Postgres through `pg`: queries per request, tables, structure, change history |
+| Database | Postgres: queries per request, tables, structure, change history — through `pg`, **Prisma** (7, or 6 with `@prisma/adapter-pg`) or **Drizzle** (`drizzle-orm/node-postgres`) |
+| Other ORMs on `pg` | Knex, Sequelize, TypeORM, …: SQL and tables per request; the line in your code when the ORM keeps it on the stack |
 | Layout | frontend and backend in one folder or side by side (`client/` + `server/`) |
 
 ## Not yet
 
-- **Prisma** and other ORMs — routes and handlers work, SQL per request doesn't yet
+- **Prisma's Rust engine** (Prisma 6 and older without a driver adapter) — its queries don't go through `pg`
+- **MySQL / SQLite** drivers — the static side understands Drizzle's MySQL and SQLite tables, the runtime side is Postgres only
 - **Next.js**, Create React App, Vue, Svelte — Feel needs Vite + React today
 - **Supabase** (browser talks to the database directly)
 - React 18 and older show a simpler, DOM-based component chain
@@ -87,7 +91,7 @@ Want one of these? See [CONTRIBUTING.md](CONTRIBUTING.md) — PRs very welcome.
 | [`@feel-dev/vite-plugin`](packages/vite-plugin) | Vite | tags every JSX element with its file:line, tags components, injects the client |
 | [`@feel-dev/client`](packages/client) | browser | Alt + right-click, React fiber chain, captures fetch/XHR/axios with stack traces, the panel |
 | [`@feel-dev/agent`](packages/agent) | Vite dev server | maps stacks through sourcemaps, builds the call graph, static analysis, reads Postgres |
-| [`@feel-dev/node`](packages/node) | your backend | reports the Express route, handler and SQL of each request in a response header |
+| [`@feel-dev/node`](packages/node) | your backend | reports the Express route, handler and SQL of each request (raw `pg`, Prisma, Drizzle) in a response header |
 
 ## Try the demo
 

@@ -1,6 +1,6 @@
 {
   "name": "@feel-dev/vite-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Alt + right-click any UI element to see the full stack behind it: component → frontend code → API → backend handler → SQL → tables.",
   "keywords": [
     "vite-plugin",
@@ -33,8 +33,8 @@
     "node": ">=20.19"
   },
   "dependencies": {
-    "@feel-dev/agent": "^0.1.0",
-    "@feel-dev/client": "^0.1.0",
+    "@feel-dev/agent": "^0.2.0",
+    "@feel-dev/client": "^0.2.0",
     "magic-string": "^0.30.0"
   },
   "peerDependencies": {

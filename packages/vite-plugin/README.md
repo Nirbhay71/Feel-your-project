@@ -34,7 +34,7 @@ export default defineConfig({
 
 `database` is optional. With it, the panel can show table structure, relations and recent changes (Postgres).
 
-**2. Backend** — first line of your server entry file (Express + `pg`):
+**2. Backend** — first line of your server entry file (Express + `pg`, Prisma or Drizzle):
 
 ```js
 import '@feel-dev/node/register';        // ES modules
@@ -64,7 +64,9 @@ server: { proxy: { '/api': 'http://localhost:3001' } }
 |---|---|
 | Data fetching | `fetch`, axios (+ `axios.create` instances), custom hooks, wrapper functions, React Query, SWR |
 | Imports | relative, Vite `resolve.alias`, tsconfig/jsconfig `paths` + `baseUrl`, `package.json` `"imports"` |
-| Backend | Express 4/5 (`app.get`, `router.get`, `app.route()`, `app.use('/prefix', router)`), `pg` |
+| Backend | Express 4/5 (`app.get`, `router.get`, `app.route()`, `app.use('/prefix', router)`) |
+| Database access | `pg`, Prisma (7, or 6 with `@prisma/adapter-pg`), Drizzle (`node-postgres`); SQL from other ORMs on `pg` |
+| Possible queries | `pool.query('SQL')`, `prisma.<model>.<op>()` (tables from `schema.prisma`, incl. `@@map`), Drizzle `select().from()` / joins / `insert` / `update` / `delete` / `db.query.<table>` (tables from `pgTable('name')`, `mysqlTable`, `sqliteTable`) |
 | Database | Postgres: tables per query (read/write), columns, keys, foreign keys both ways, change history (opt-in triggers) |
 
 ## Requirements
@@ -76,4 +78,4 @@ server: { proxy: { '/api': 'http://localhost:3001' } }
 ## Good to know
 
 - **Change tracking** is off until you click "Turn on change tracking" in the panel. It adds a `feel_audit` table and a trigger per table to the database you point it at — use it on a dev database.
-- The agent only reads source files inside your project and never `.env` or other non-code files.
+- The agent only reads source files inside your project — plus your Prisma schema, for model → table names — and never `.env` or other non-code files.

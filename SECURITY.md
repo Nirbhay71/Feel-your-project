@@ -7,7 +7,8 @@ built to be careful:
 
 - Only source files (`.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`) inside your
   project folder are ever read — never `.env`, config or files in
-  `node_modules`.
+  `node_modules`. The one exception is your Prisma schema (`.prisma`), read
+  only for model → table names, and never sent to the browser.
 - Requests to Feel from other websites open in the same browser are refused
   (origin check), and anything that changes state needs a header other sites
   can't send.

@@ -1,7 +1,7 @@
 # Contributing to Feel
 
 Thanks for helping! The most valuable contributions right now are **support
-for more stacks** (Prisma, Next.js, Supabase, tRPC, …) and **bug reports from
+for more stacks** (Next.js, Supabase, tRPC, MySQL, …) and **bug reports from
 real apps** — Feel gets better every time it meets code it didn't expect.
 
 ## Set up
@@ -27,7 +27,7 @@ packages/
   client/       Browser: Alt + right-click, React fiber chain, fetch/XHR/axios capture, the panel (list + graph)
   agent/        Node, inside Vite dev: source lookup, stack → original lines, call graph,
                 static "possible calls", import resolution, SQL parsing, Postgres inspection
-  node/         Backend: Express + pg instrumentation (X-Feel-Route header, per-request context)
+  node/         Backend: Express, pg and Drizzle instrumentation (X-Feel-Route header, per-request context)
 demo/           React + Express + Postgres app that exercises every supported pattern
 tests/          node:test suites; tests/fixtures/ holds small apps to analyse
 ```
@@ -53,8 +53,10 @@ Most support lives in the agent:
 - **A new backend framework** → route scanning in `static.js` (`scanRoutes`)
   and handler lookup in `handler.js`, plus runtime instrumentation in
   `packages/node/`.
-- **A new database layer** (e.g. Prisma) → `packages/node/` to record queries
-  per request, `packages/agent/src/sql.js` to find their tables.
+- **A new database layer** → `packages/node/` to record queries per request
+  (an ORM on `pg` usually works already — see `drizzle.js` for one that needs
+  help finding your line), `packages/agent/src/sql.js` to find their tables,
+  and `packages/agent/src/orm.js` for its calls in "possible calls".
 
 ## Reporting bugs
 

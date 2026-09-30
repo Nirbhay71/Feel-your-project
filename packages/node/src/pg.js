@@ -1,6 +1,8 @@
 // Layer 3 — pg: which SQL queries a request ran, and from which line.
 //
-// Patches pool.query() and client.query(). Each query is recorded with:
+// Patches pool.query() and client.query() — which also catches every ORM
+// that talks to Postgres through pg (Prisma's adapter-pg, Drizzle, Knex,
+// Sequelize, TypeORM, …). Each query is recorded with:
 //   sql, the file:line in your code that called it, duration, rows, error
 // and added to the current request's context (see context.js).
 //
@@ -9,7 +11,7 @@
 // row change with its request:
 //   SELECT set_config('feel.request_id', '…', false), set_config('feel.request_label', 'POST /api/orders', false)
 
-import { als, callerSite } from './context.js';
+import { als, callerSite, calledFrom } from './context.js';
 
 const MAX_QUERIES = 50; // per request — keeps the response header small
 const MAX_SQL = 2000; // characters
@@ -37,11 +39,12 @@ function patch(proto, { tagConnection }) {
 
     // Record it now, while the caller's line is still on the stack.
     // Skipped without a request context, without SQL (e.g. a cursor), or
-    // when pg itself calls in (Pool → Client, already recorded by the Pool).
-    const site = ctx && sql ? callerSite() : null;
+    // when pg-pool hands a pool.query() on to a Client (already recorded by
+    // the Pool). Queries whose line can't be found — sent by an ORM from
+    // deep inside its own code — are still recorded, with file: null.
     let entry = null;
-    if (site?.file && ctx.queries.length < MAX_QUERIES) {
-      entry = { sql: sql.slice(0, MAX_SQL), ...site, duration: null, rowCount: null, error: null };
+    if (ctx && sql && ctx.queries.length < MAX_QUERIES && !(tagConnection && calledFrom('pg-pool'))) {
+      entry = { sql: sql.slice(0, MAX_SQL), ...callerSite(), duration: null, rowCount: null, error: null };
       ctx.queries.push(entry);
     }
 

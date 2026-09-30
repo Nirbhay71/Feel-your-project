@@ -553,12 +553,15 @@ function originOf(req) {
 function renderQuery(q) {
   const row = el('div', { className: 'hop' }, el('span', { className: 'tag', textContent: 'Database' }));
   row.append(
-    el('button', {
-      className: 'be',
-      textContent: `${q.file.split(/[\\/]/).pop()}:${q.line}`,
-      title: `Query sent from ${q.file}:${q.line}`,
-      onclick: () => showCode({ file: q.file, line: q.line }),
-    }),
+    q.file
+      ? el('button', {
+          className: 'be',
+          textContent: `${q.file.split(/[\\/]/).pop()}:${q.line}`,
+          title: `Query sent from ${q.file}:${q.line}`,
+          onclick: () => showCode({ file: q.file, line: q.line }),
+        })
+      : // Sent by an ORM from inside its own code (e.g. a Prisma batch transaction)
+        el('span', { className: 'muted', textContent: 'ORM', title: 'Sent by the ORM — no line in your code on the stack' }),
     el('code', { className: 'sql', textContent: q.sql.replace(/\s+/g, ' ').trim(), title: q.sql.trim() }),
   );
   for (const t of q.tables ?? []) {

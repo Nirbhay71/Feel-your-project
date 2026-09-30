@@ -103,12 +103,13 @@ export function buildGraph({ entry, requests, possible = [], tableInfo }) {
 
     // SQL queries and the tables they touch
     for (const q of b.queries ?? []) {
-      const qn = node(`query:${q.file}:${q.line}`, {
+      // No file: sent by an ORM from inside its own code — keyed by its SQL.
+      const qn = node(q.file ? `query:${q.file}:${q.line}` : `query:${q.sql}`, {
         kind: 'query',
         label: q.sql.replace(/\s+/g, ' ').trim(),
-        sub: `${short(q.file)}:${q.line}${q.duration != null ? ` · ${Math.round(q.duration)} ms` : ''}`,
+        sub: `${q.file ? `${short(q.file)}:${q.line}` : 'ORM'}${q.duration != null ? ` · ${Math.round(q.duration)} ms` : ''}`,
         error: !!q.error,
-        action: { code: { file: q.file, line: q.line } },
+        action: q.file ? { code: { file: q.file, line: q.line } } : handler.action,
       });
       edge(handler, qn);
       for (const t of q.tables ?? []) {

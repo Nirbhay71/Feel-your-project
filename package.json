@@ -14,6 +14,7 @@
     "test": "node --test"
   },
   "devDependencies": {
-    "concurrently": "^9.0.0"
+    "concurrently": "^9.0.0",
+    "drizzle-orm": "^0.45.3"
   }
 }

@@ -1,11 +1,14 @@
 {
   "name": "@feel-dev/node",
-  "version": "0.1.0",
-  "description": "Backend side of Feel: tells the browser which Express route, handler and SQL queries answered each request (dev only).",
+  "version": "0.2.0",
+  "description": "Backend side of Feel: tells the browser which Express route, handler and SQL queries answered each request — raw pg, Prisma or Drizzle (dev only).",
   "keywords": [
     "express",
     "pg",
     "postgres",
+    "prisma",
+    "drizzle",
+    "orm",
     "devtools",
     "tracing"
   ],
@@ -35,13 +38,17 @@
   },
   "peerDependencies": {
     "express": ">=4",
-    "pg": ">=8"
+    "pg": ">=8",
+    "drizzle-orm": ">=0.30"
   },
   "peerDependenciesMeta": {
     "express": {
       "optional": true
     },
     "pg": {
+      "optional": true
+    },
+    "drizzle-orm": {
       "optional": true
     }
   }

@@ -14,7 +14,8 @@
 //   2. backendRoutes: scan the project for Express routes and app.use()
 //      mounts to get each route's full path.
 //   3. matchRoute: URL pattern ↔ route path (":id" and "*" are wildcards).
-//   4. routeQueries: walk the handler's call graph for pool.query('…') SQL.
+//   4. routeQueries: walk the handler's call graph for pool.query('…') SQL
+//      and Prisma / Drizzle calls (orm.js).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,6 +24,7 @@ import { loadFile, importTarget, refTarget, resolveImport } from './files.js';
 import { collectFunctions } from './graph.js';
 import { resolveHandler } from './handler.js';
 import { tablesInSql } from './sql.js';
+import { ormQuery } from './orm.js';
 
 export async function possibleCalls({ abs, component, rootDir, display }) {
   const loaded = await loadFile(abs).catch(() => null);
@@ -51,7 +53,7 @@ export async function possibleCalls({ abs, component, rootDir, display }) {
         line: n.fn.node.loc.start.line,
       })),
       site: { file: display(call.site.file), line: call.site.line },
-      route: route && (await describeRoute(route)),
+      route: route && (await describeRoute(route, rootDir)),
     });
   }
   return out;
@@ -550,7 +552,7 @@ function segmentsMatch(url, route) {
 
 // --- 4. Route → handler → SQL -----------------------------------------------------
 
-async function describeRoute(route) {
+async function describeRoute(route, rootDir) {
   const target = (await resolveHandler(route.file, route.line, route.handlerIndex).catch(() => null)) ?? {
     file: route.file,
     line: route.line,
@@ -564,19 +566,22 @@ async function describeRoute(route) {
     file: route.file, // where it's registered (router.get…), absolute like runtime
     line: route.line,
     handler: { file: target.file, line: target.line, name: (fn && functionName(fn)) ?? null, index: route.handlerIndex },
-    queries: fn ? await queriesIn(target.file, fn) : [],
+    queries: fn ? await queriesIn(target.file, fn, rootDir) : [],
   };
 }
 
-// Every db.query('SQL') / pool.query(`SQL`) reachable from the handler.
-async function queriesIn(file, fn) {
+// Every db.query('SQL') / pool.query(`SQL`) reachable from the handler, and
+// every Prisma / Drizzle call (see orm.js).
+async function queriesIn(file, fn, rootDir) {
   const out = [];
   const seen = new Set();
   for (const node of await collectFunctions(file, fn)) {
+    const candidates = []; // possible ORM calls — resolving their tables reads other files
     node.fn.traverse({
       CallExpression(p) {
         const c = p.node.callee;
-        if (c.type !== 'MemberExpression' || c.property.name !== 'query') return;
+        if (c.type !== 'MemberExpression') return;
+        if (c.property.name !== 'query') return void candidates.push(p);
         const arg = p.get('arguments')[0];
         let sql = null;
         if (arg?.isStringLiteral()) sql = arg.node.value;
@@ -588,6 +593,38 @@ async function queriesIn(file, fn) {
         out.push({ sql, file: node.file, line: p.node.loc.start.line, tables: tablesInSql(sql) });
       },
     });
+    if (!candidates.length) continue;
+    const { code } = await loadFile(node.file);
+    // One entry per chain: db.select().from(users).leftJoin(orders, …) → users + orders.
+    // The outermost call of a chain comes first, so its label covers the rest.
+    const chains = new Map(); // chain's outermost call → entry
+    for (const p of candidates) {
+      const orm = await ormQuery(p, node.file, code, rootDir);
+      if (!orm) continue;
+      const top = chainTop(p);
+      const entry = chains.get(top);
+      if (entry) {
+        for (const t of orm.tables) if (!entry.tables.some((e) => e.name === t.name)) entry.tables.push(t);
+        continue;
+      }
+      const key = `${node.file}:${p.node.loc.start.line}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const created = { ...orm, file: node.file, line: p.node.loc.start.line };
+      chains.set(top, created);
+      out.push(created);
+    }
   }
   return out;
+}
+
+// a.b().c().d() — the outermost call of the chain a call sits in.
+function chainTop(p) {
+  let top = p.node;
+  let cur = p;
+  while (cur.parentPath?.isMemberExpression({ object: cur.node }) && cur.parentPath.parentPath?.isCallExpression({ callee: cur.parentPath.node })) {
+    cur = cur.parentPath.parentPath;
+    top = cur.node;
+  }
+  return top;
 }

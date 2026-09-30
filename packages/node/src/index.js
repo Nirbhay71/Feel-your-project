@@ -2,8 +2,10 @@
 //
 //   Express (Layer 2): which route/handler answered each request
 //   pg      (Layer 3): which SQL queries each request ran, and from which line
+//   Drizzle          : the line that built each query (the SQL goes through pg)
 //
 // Usually loaded via `import '@feel-dev/node/register'`.
 
 export { instrumentExpress } from './express.js';
 export { instrumentPg } from './pg.js';
+export { instrumentDrizzle } from './drizzle.js';
