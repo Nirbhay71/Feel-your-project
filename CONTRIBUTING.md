@@ -49,10 +49,13 @@ Each file starts with a comment explaining its job — start there.
 
 ### The Next.js end-to-end test
 
-`tests/e2e/next.e2e.test.js` runs a real `next dev` on `tests/fixtures/next-app`
-(Turbopack, then `--webpack`, then Turbopack with the database unreachable) and
-Alt + right-clicks through it in Chromium. It's opt-in — the first run installs
-Next into the fixture (a few hundred MB) and Feel from packed tarballs:
+`tests/e2e/next.e2e.test.js` runs a real `next dev` on a copy of
+`tests/fixtures/next-app` (Turbopack, then `--webpack`, then Turbopack with the
+database unreachable) and Alt + right-clicks through it in Chromium — also
+after editing a route and a helper while the page is open (hot reload), and
+knocking on the agent from the machine's LAN address. It's opt-in — the first
+run installs Next into the copy (a few hundred MB, kept in `<tmp>/feel-next-e2e`
+or `FEEL_E2E_DIR` for the next run) and Feel from packed tarballs:
 
 ```bash
 FEEL_E2E=1 npm run test:e2e
@@ -62,7 +65,7 @@ Needs Postgres (`FEEL_E2E_DATABASE_URL`, default `postgres://feel@127.0.0.1:5499
 the test creates an `items` table) and a Chromium that matches the fixture's
 `playwright-core` (`FEEL_E2E_CHROME`, default Playwright's under `/opt/pw-browsers`,
 or `npx playwright-core install chromium`). `FEEL_E2E_VERBOSE=1` prints what the
-panel showed. Everything it writes in the fixture is git-ignored.
+panel showed. The fixture itself is only read.
 
 ## Adding support for a new library
 

@@ -30,7 +30,9 @@ export default withFeel(
 );
 ```
 
-Options: `database`, `projectRoot` (the folder holding frontend and backend, if not the nearest `.git`), `allowedHosts` (host names other than localhost that may reach Feel — defaults to your `allowedDevOrigins`).
+Options: `database`, `projectRoot` (the folder holding frontend and backend, if not the nearest `.git`), `allowedHosts` (host names other than localhost that may reach Feel — defaults to your `allowedDevOrigins`), `allowedAddresses` (IP addresses of other machines that may use Feel, e.g. your phone on the same Wi-Fi — none by default).
+
+`withFeel` returns a config *function* (Next calls it with the phase), so put it outermost: `withFeel(withOtherPlugin(config))`.
 
 **2. `instrumentation.js`** in your project root (or `src/`) — records each route handler's SQL:
 
@@ -68,15 +70,23 @@ Then `next dev` (Turbopack) or `next dev --webpack`, **hold Alt** and **Alt + ri
 
 The agent route reads your source code, so it answers only when all of these hold:
 
-- `next dev` with `withFeel` — under `next start` it's a 404
+- `next dev` with `withFeel` — under `next start` it's a 404 (and the production build carries nothing of Feel's but that 404)
+- the connection comes from this machine — `next dev` listens on your whole network, but Feel checks the socket's own address, which a client can't fake (`Host` and `X-Forwarded-For` can be). Other machines only with `allowedAddresses`
 - the `Host` is this machine (`localhost`, `*.localhost`, `127.0.0.1`, `[::1]`) or in `allowedHosts` — this blocks DNS rebinding
 - the request comes from the page itself (same `Origin`; POSTs need an `X-Feel` header)
 
 ## Not yet
 
-Server Actions, data fetched inside Server Components (no browser request to follow), `middleware.ts` / `proxy.ts`, the edge runtime, Next before 15.3.
+Server Actions, data fetched inside Server Components (no browser request to follow), `middleware.ts` / `proxy.ts`, the edge runtime, Next before 16.
+
+Known limits:
+
+- Route handlers exported as `export * from './handlers'`, or as `export let GET` reassigned later, aren't instrumented (`export const { GET, POST } = handlers` and `export { GET } from './x'` are).
+- A Server Component that renders a client component isn't in the component chain; elements it renders directly are tagged, and children passed down show under the component that renders them.
+- `output: 'export'` isn't supported (the agent route is dynamic).
+- `next dev --experimental-https`: the self-signed certificate stops Feel from fetching sourcemaps, so browser frames aren't mapped.
 
 ## Requirements
 
-- Next.js 15.3+ (tested with 16), App Router, React 19
+- Next.js 16+, App Router, React 19
 - Node 20.19+

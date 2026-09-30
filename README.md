@@ -89,14 +89,14 @@ import '@feel-dev/next/client';
 export { GET, POST } from '@feel-dev/next/agent';
 ```
 
-Works with Turbopack (`next dev`) and webpack (`next dev --webpack`), Next 15.3+.
+Works with Turbopack (`next dev`) and webpack (`next dev --webpack`), Next 16+.
 Full guide: [packages/next/README.md](packages/next/README.md).
 
 ## Supported
 
 | | |
 |---|---|
-| Frontend | React 19 (dev mode) on Vite — tested with Vite 7 and 8 — or on **Next.js** App Router (15.3+, tested with 16; Turbopack or webpack) |
+| Frontend | React 19 (dev mode) on Vite — tested with Vite 7 and 8 — or on **Next.js** App Router (16+; Turbopack or webpack) |
 | Data fetching | `fetch`, axios, `axios.create` instances (incl. interceptors), wrapper functions, custom hooks, API objects (`userApi.getAll()`), React Query, SWR |
 | Imports | relative, Vite `resolve.alias`, tsconfig/jsconfig `paths` + `baseUrl`, `package.json` `"imports"` |
 | Backend | Express 4 and 5 — ES modules or CommonJS, routers, `app.use` mounts, controllers; Next.js Route Handlers (`app/**/route.ts`) and Pages Router API routes (`pages/api/**`) |
@@ -111,7 +111,7 @@ Full guide: [packages/next/README.md](packages/next/README.md).
 - **MySQL table view and change history** — MySQL queries and tables show per request, but the table view is Postgres only
 - **Other MySQL paths**: the `mysql` and `mariadb` drivers, Prisma on MySQL, and prepared statements made with `connection.prepare()`; `PoolCluster` is best effort (a query's line may be missing)
 - **SQLite** — the static side understands Drizzle's SQLite tables, the runtime side doesn't yet
-- **Next.js beyond Route Handlers**: Server Actions, data fetched inside Server Components, `middleware.ts` / `proxy.ts`, the edge runtime, and Next before 15.3 (Server Components still get their DOM tags and component chain)
+- **Next.js beyond Route Handlers**: Server Actions, data fetched inside Server Components, `middleware.ts` / `proxy.ts`, the edge runtime, `output: 'export'`, and Next before 16 (Server Components still get their DOM tags; a Server Component that renders a client one isn't in its chain)
 - Create React App, Vue, Svelte — Feel needs React on Vite or Next.js today
 - **Supabase** (browser talks to the database directly)
 - React 18 and older show a simpler, DOM-based component chain

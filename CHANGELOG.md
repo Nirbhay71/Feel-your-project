@@ -29,20 +29,31 @@ Feel now sees through ORMs, and works in Next.js.
   stays Postgres-only; prepared statements made with `connection.prepare()`
   aren't recorded yet; `PoolCluster` is best effort (the line may be missing).
 
-- **Next.js** (App Router, 15.3+; Turbopack and `next dev --webpack`) through the
+- **Next.js** (App Router, 16+; Turbopack and `next dev --webpack`) through the
   new `@feel-dev/next`: `withFeel(nextConfig)` plus `instrumentation.js`,
   `instrumentation-client.js` and a one-line agent route. DOM tags and the
   component chain for client and Server Components, browser requests mapped
   through Next's sourcemaps, Route Handlers (`app/**/route.ts`) and Pages
   Router API routes with their SQL and the line that sent it, and possible
   calls to route files (`[id]` → `:id`, `[...slug]` → `*`, `(group)` folders
-  left out). The agent route answers only under `next dev`, only on this
-  machine (DNS rebinding) and only to the app's own page.
+  left out). Works with a `basePath` and with strict TypeScript (types
+  included), and keeps its lines through hot reloads. The agent route
+  answers only under `next dev`, only to connections from this machine
+  (`next dev` listens on the whole network: another machine gets 403 whatever
+  `Host` it sends, unless listed in `allowedAddresses`), only for this
+  machine's host names (DNS rebinding) and only to the app's own page.
+  With an older Next, `withFeel` warns and leaves the config alone.
 
 ### Changed
 
 - The JSX tagging moved from the Vite plugin into `@feel-dev/agent`
   (`tagJsx`), shared with `@feel-dev/next`. Output for Vite is unchanged.
+- Possible calls: a catch-all route (`app.get('*')`, the usual SPA
+  fallback) no longer wins over a specific one, and a URL built on a base
+  that may be empty (`${BASE}/api/x`) still finds its route.
+- The agent never reads build output (`.next`, `dist`, `build`, `.vite`,
+  `coverage`, `.svelte-kit`, `.turbo`) and refuses requests a browser marks
+  `Sec-Fetch-Site: cross-site`.
 - `.ts` files are parsed without JSX, so old-style casts (`<User>data`) work.
 
 - `@feel-dev/node` follows async stack frames to find the line in your code
