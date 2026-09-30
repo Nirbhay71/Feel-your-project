@@ -4,6 +4,8 @@
 // and report it in the X-Feel-Route header.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { wrapRoute } from '../packages/next/src/wrap-route.js';
@@ -23,6 +25,16 @@ function assertLinesKept(original, out) {
   original.split('\n').forEach((line, i) => {
     if (!/^export \{/.test(line)) assert.equal(after[i], line.replace(/^export (default )?/, ''), `line ${i + 1}`);
   });
+}
+
+// The { file, line, name } each wrapper is told, by exported name.
+function metaOf(code) {
+  const out = {};
+  for (const m of code.matchAll(/const __feel_(\w+) = __feelWrap(?:Route|Pages)\([\w$]+, (\{.*\})\);/g)) {
+    const { file, line, name } = JSON.parse(m[2]);
+    out[m[1]] = { file, line, name };
+  }
+  return out;
 }
 
 const decode = (res) => JSON.parse(decodeURIComponent(res.headers.get(HEADER)));
@@ -127,4 +139,60 @@ test('Pages Router: wrapRoute for export default, wrapPagesHandler sets the head
   assert.equal(route.handlers[0].name, 'handler');
 
   assert.equal(typeof wrapPagesHandler(null, {}), 'object', 'non-functions pass through');
+});
+
+test('wrapRoute: destructured exports (Auth.js handlers) are wrapped, the rest re-exported', () => {
+  const code = `import { handlers } from '@/auth';
+export const { GET, POST, auth } = handlers;
+export const runtime = 'nodejs';
+`;
+  const out = wrapRoute(code, FILE, APP_INFO);
+  parseCode(out.code, FILE);
+  assert.deepEqual(out.code.split('\n').slice(0, 3), [code.split('\n')[0], 'const { GET, POST, auth } = handlers;', "export const runtime = 'nodejs';"]);
+  assert.match(out.code, /export \{ auth \};/);
+  assert.deepEqual(metaOf(out.code), { GET: { file: FILE, line: 2, name: 'GET' }, POST: { file: FILE, line: 2, name: 'POST' } });
+});
+
+test('wrapRoute: a multi-line export { … } keeps every line below it in place', () => {
+  const code = `function handler() {}
+export {
+  handler as GET,
+  handler as POST,
+};
+function after() {}
+`;
+  const out = wrapRoute(code, FILE, APP_INFO);
+  assert.equal(out.code.split('\n')[5], 'function after() {}', 'line 6 is still line 6');
+  assert.deepEqual(metaOf(out.code).GET, { file: FILE, line: 1, name: 'GET' }, 'points at the function, not the export');
+});
+
+test('wrapRoute: a handler re-exported from another file points at that file (like the static scan)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'feel-wrap-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'lib'));
+    fs.writeFileSync(path.join(dir, 'lib', 'handlers.js'), '// shared\n\nexport async function sharedGet() {\n  return new Response("x");\n}\n');
+    const route = path.join(dir, 'app', 'route.js');
+    const out = wrapRoute("export { sharedGet as GET } from '../lib/handlers';\nexport { missing as POST } from '../lib/nowhere';\n", route, APP_INFO);
+    const meta = metaOf(out.code);
+    assert.deepEqual(meta.GET, { file: path.join(dir, 'lib', 'handlers.js'), line: 3, name: 'GET' });
+    assert.deepEqual(meta.POST, { file: route, line: 2, name: 'POST' }, 'not found → the export line');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Pages Router: `export default handler;` at the bottom points at the function', () => {
+  const code = `async function handler(req, res) {
+  res.end('ok');
+}
+
+export default handler;
+`;
+  const out = wrapRoute(code, FILE, { kind: 'pages', path: '/api/legacy' });
+  parseCode(out.code, FILE);
+  assert.deepEqual(metaOf(out.code).default, { file: FILE, line: 1, name: 'handler' });
+  const direct = wrapRoute('// top\n\nexport default function handler(req, res) {}\n', FILE, { kind: 'pages', path: '/api/legacy' });
+  assert.equal(metaOf(direct.code).default.line, 3);
+  const anon = wrapRoute('// top\nexport default async (req, res) => res.end();\n', FILE, { kind: 'pages', path: '/api/legacy' });
+  assert.equal(metaOf(anon.code).default.line, 2);
 });

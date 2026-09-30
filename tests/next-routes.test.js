@@ -84,6 +84,27 @@ export const dynamic = 'force-dynamic';
   );
 });
 
+test('nextRoutesIn: destructured exports and re-exports from another file', async () => {
+  const { parseCode } = await import('../packages/agent/src/ast.js');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'feel-next-routes-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'lib'));
+    fs.writeFileSync(path.join(dir, 'lib', 'handlers.js'), '// shared\n\nexport async function sharedGet() {}\n');
+    const file = path.join(dir, 'app', 'api', 'shared', 'route.js');
+    const code = "import { handlers } from '../../../lib/auth';\nexport const { POST, PUT: put, ...rest } = handlers;\nexport { sharedGet as GET } from '../../../lib/handlers';\n";
+    const routes = await nextRoutesIn(file, parseCode(code, file), nextRouteInfo('app/api/shared/route.js'));
+    const rel = (f) => path.relative(dir, f).split(path.sep).join('/');
+    assert.deepEqual(
+      routes.map((r) => `${r.method} at ${rel(r.file)}:${r.line} → ${rel(r.handlerTarget.file)}:${r.handlerTarget.line}`),
+      ['POST at app/api/shared/route.js:2 → app/api/shared/route.js:2', 'GET at app/api/shared/route.js:3 → lib/handlers.js:3'],
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('possibleCalls: ItemList → Next route handlers, their SQL and tables', async () => {
   const display = (abs) => path.relative(APP, abs).split(path.sep).join('/');
   const calls = await possibleCalls({ abs: path.join(APP, 'components', 'ItemList.jsx'), component: 'ItemList', rootDir: APP, display });

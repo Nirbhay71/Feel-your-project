@@ -12,21 +12,30 @@
 //     bundle (serverExternalPackages), so the pg / mysql2 patches loaded by
 //     instrumentation.js and your route handlers share one copy of each
 //   - tells the agent route (agent.js) where the project is
-// In every other phase it only keeps Feel's packages out of the bundle —
-// nothing of Feel runs in a production build.
+// In every other phase it only keeps Feel's backend packages out of the
+// bundle — nothing of Feel runs in a production build. (@feel-dev/next itself
+// is bundled there: the agent route then needs nothing at runtime, so it
+// answers 404 even when Feel was installed as a dev dependency and left out.)
+//
+// Needs Next.js 16 or later (the Turbopack rule format withFeel writes);
+// with an older Next it warns and leaves the config alone.
 //
 // Two small files of your own finish the setup (see README):
 // instrumentation.js / instrumentation-client.js and the agent route.
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { trackPeers } from './peer.js';
 
 // Next's phase names, written out so this file doesn't need next itself.
 const DEV_PHASE = 'phase-development-server';
 
 const LOADER = fileURLToPath(new URL('./loader.cjs', import.meta.url));
 const OWN_PACKAGES = ['@feel-dev/next', '@feel-dev/node', '@feel-dev/agent'];
+const BACKEND_PACKAGES = ['@feel-dev/node', '@feel-dev/agent'];
+const MIN_NEXT = 16;
 // Loaded by instrumentation.js *and* imported by route handlers: bundled,
 // they'd be two copies and only one would be patched. (Next already keeps
 // pg, Prisma and Express external by default.)
@@ -39,23 +48,45 @@ const SOURCE_FILES = '*.{js,jsx,ts,tsx,mjs}';
 // options.root:         the Next project (default: the folder next runs in)
 // options.allowedHosts: extra host names that may reach the agent (default:
 //                       your allowedDevOrigins)
+// options.allowedAddresses: client IP addresses besides this machine that may
+//                       use the agent, e.g. your phone on the same Wi-Fi
+//                       (default: none — `next dev` is reachable from the
+//                       whole network, Feel only from this machine)
+//
+// Returns a config *function* (Next calls it with the phase). Other plugins
+// that expect an object go inside: withFeel(withOther(config)).
 export function withFeel(nextConfig = {}, options = {}) {
   return async (phase, ctx) => {
     const config = (typeof nextConfig === 'function' ? await nextConfig(phase, ctx) : nextConfig) ?? {};
-    if (phase !== DEV_PHASE) return { ...config, serverExternalPackages: externals(config, OWN_PACKAGES) };
+    if (phase !== DEV_PHASE) return { ...config, serverExternalPackages: externals(config, BACKEND_PACKAGES) };
 
     const root = path.resolve(options.root ?? process.cwd());
+    const version = nextMajor(root);
+    if (version != null && version < MIN_NEXT) {
+      console.warn(`[feel] Next.js ${version} found — Feel needs Next.js ${MIN_NEXT} or later; running without it.`);
+      return config;
+    }
+
+    // Requests to the agent route must come from this machine (peer.js).
+    // This runs in the process that serves them, before the first one.
+    trackPeers();
+    const basePath = config.basePath ?? '';
     // Read by the agent route, which runs in this same process.
     process.env.__FEEL_NEXT = JSON.stringify({
       root,
       projectRoot: options.projectRoot && path.resolve(root, options.projectRoot),
       database: options.database,
+      basePath,
       allowedHosts: options.allowedHosts ?? config.allowedDevOrigins ?? [],
+      allowedAddresses: options.allowedAddresses ?? [],
     });
 
     const hasAxios = canResolve(root, 'axios');
     return {
       ...config,
+      // The browser script finds the agent under the app's basePath
+      // (@feel-dev/next/client reads it; Next writes the value into the bundle).
+      env: { ...config.env, FEEL_BASE_PATH: basePath },
       serverExternalPackages: externals(config, [...OWN_PACKAGES, ...DRIVERS]),
       turbopack: turbopackConfig(config.turbopack, root, hasAxios),
       webpack: webpackHook(config.webpack, root, hasAxios),
@@ -108,6 +139,17 @@ function webpackHook(userHook, root, hasAxios) {
     }
     return out;
   };
+}
+
+// The installed Next's major version, or null when it can't be found.
+function nextMajor(root) {
+  try {
+    const file = createRequire(path.join(root, 'package.json')).resolve('next/package.json');
+    const { version } = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Number(String(version).split('.')[0]) || null;
+  } catch {
+    return null;
+  }
 }
 
 function canResolve(root, name) {

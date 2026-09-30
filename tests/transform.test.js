@@ -56,6 +56,10 @@ test('Next loader: .js with JSX is tagged, .js without JSX and .ts are left alon
   // A capitalised class in a plain module isn't a component.
   const plain = 'export class Store { get(x) { return x < 3; } }\n';
   assert.equal(transformForNext(plain, file('lib/store.js'), { root: ROOT }), null);
+  // …nor a capitalised function in a .js file that renders nothing.
+  const helper = 'export function Clamp(x) {\n  return x <3 ? x : 3;\n}\n';
+  assert.equal(transformForNext(helper, file('lib/clamp.js'), { root: ROOT }), null);
+  assert.ok(transformForNext(helper, file('lib/clamp.jsx'), { root: ROOT }), '.jsx: every capitalised function counts');
 
   // .ts is never JSX, even with a "<" in it (old-style cast).
   const ts = 'export const n = <number>(1 as unknown);\nexport function Big() { return n; }\n';
@@ -86,4 +90,16 @@ export async function GET(request: Request) {
   const js = transformForNext(routeJs, file('app/api/x/[id]/route.js'), { root: ROOT, server: true });
   assert.match(js.code, /__feelWrapRoute\(POST, \{.*"path":"\/api\/x\/:id"/);
   assert.deepEqual(js.code.split('\n').slice(0, 3), ['async function POST() {', '  return new Response(null);', '}']);
+});
+
+test('Next loader: one step hands on its map; tagged *and* wrapped hands on none (lines are kept instead)', () => {
+  const routeJsx = 'export function GET() {\n  return <div>x</div>;\n}\n';
+  const both = transformForNext(routeJsx, file('app/api/x/route.jsx'), { root: ROOT, server: true });
+  assert.match(both.code, /data-src=/);
+  assert.match(both.code, /__feelWrapRoute\(GET/);
+  assert.equal(both.map, null, 'a map of only the second step would be wrong');
+  assert.equal(both.code.split('\n')[1].trim().startsWith('return <div data-src='), true, 'line 2 is still line 2');
+
+  const tagged = transformForNext(routeJsx, file('app/api/x/route.jsx'), { root: ROOT, server: false });
+  assert.ok(tagged.map?.mappings, 'browser build: only tagged, with its map');
 });

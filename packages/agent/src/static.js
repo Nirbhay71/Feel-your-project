@@ -541,14 +541,20 @@ const joinPath = (a, b) => `/${[a, b].join('/').split('/').filter(Boolean).join(
 // URL pattern from the frontend ↔ route path from the backend.
 //   "/api/users/*"  ↔  "/api/users/:id"   ✓
 //   "*/sales"       ↔  "/api/sales"       ✓ (a leading * is an unknown base URL)
+//   "*/sales"       ↔  "/sales"           ✓ (…which may be empty)
 function matchRoute(call, routes) {
   const url = call.url.replace(/^https?:\/\/[^/]+/, '').split(/[?#]/)[0];
   const segs = url.split('/').filter(Boolean);
   const candidates = routes.filter((r) => (r.method === call.method || r.method === 'ALL') && segmentsMatch(segs, r.fullPath.split('/').filter(Boolean)));
-  // Prefer the most specific route (fewest :params).
-  candidates.sort((a, b) => (a.fullPath.match(/:/g)?.length ?? 0) - (b.fullPath.match(/:/g)?.length ?? 0));
+  // Prefer the most specific route: catch-alls (Express's app.get('*'),
+  // Next's [...slug]) last, then the fewest :params. The sort is stable, so
+  // equally specific routes keep the order they were found in.
+  candidates.sort((a, b) => count(a.fullPath, WILDCARD) - count(b.fullPath, WILDCARD) || count(a.fullPath, /:/g) - count(b.fullPath, /:/g));
   return candidates[0] ?? null;
 }
+
+const WILDCARD = /(?:^|\/)\*/g; // a segment that is (or starts with) *
+const count = (text, pattern) => text.match(pattern)?.length ?? 0;
 
 function segmentsMatch(url, route) {
   if (url[0]?.startsWith('*') && url[0] !== '*') url = ['*', ...url.slice(1)];
@@ -556,8 +562,10 @@ function segmentsMatch(url, route) {
   if (route.at(-1) === '*' && url.length >= route.length && url.length > 0) {
     if (segmentsMatch(url.slice(0, route.length - 1), route.slice(0, -1))) return true;
   }
-  if (url[0] === '*' && url.length <= route.length) {
-    // leading * = base URL: try it against every possible number of leading segments
+  // A leading * in the URL is an unknown base (`${BASE}/api/x`), and a base
+  // may well be empty: it stands for any number of segments, zero included.
+  if (url[0] === '*' && url.length <= route.length + 1) {
+    // try it against every possible number of leading segments
     for (let skip = 0; skip <= route.length - url.length + 1; skip++) {
       if (segmentsMatch(url.slice(1), route.slice(skip))) return true;
     }

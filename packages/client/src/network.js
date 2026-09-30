@@ -10,7 +10,10 @@
 // Must be imported before the app runs, so it's the first import of index.js
 // and the client script is injected at the top of <head>.
 
-const AGENT = '/__feel';
+// The agent's URL for one of its routes. Vite serves it at /__feel; a
+// Next.js app with a basePath serves it under that path, which
+// @feel-dev/next/client puts in globalThis.__FEEL_BASE__ before we load.
+export const agentUrl = (route) => `${globalThis.__FEEL_BASE__ ?? ''}/__feel/${route}`;
 const MAX_REQUESTS = 200;
 
 const requests = [];
@@ -39,7 +42,7 @@ async function record(entry) {
   const wrote = queries.some((q) => q.tables?.some((t) => t.access === 'write'));
   if (wrote && entry.backend.id) {
     try {
-      const res = await originalFetch(`${AGENT}/db/changes?request=${encodeURIComponent(entry.backend.id)}`);
+      const res = await originalFetch(agentUrl(`db/changes?request=${encodeURIComponent(entry.backend.id)}`));
       if (res.ok) entry.changes = (await res.json()).changes;
     } catch {
       // no database configured / agent unreachable — just skip
@@ -67,7 +70,7 @@ function tablesFor(sql) {
 
 async function agentPost(route, body) {
   try {
-    const res = await originalFetch(`${AGENT}/${route}`, {
+    const res = await originalFetch(agentUrl(route), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Feel': '1' }, // see the agent's cross-site check
       body: JSON.stringify(body),
@@ -118,7 +121,7 @@ export function withStack(stack, fn) {
 // neither is Next.js's own: its dev overlay (/__nextjs…), its scripts
 // (/_next/…) and the React Server Component payloads it fetches (?_rsc=…).
 const isOwnRequest = (url) =>
-  url.includes(`${AGENT}/`) || url.includes('/__open-in-editor') || url.includes('/__nextjs') || url.includes('/_next/') || /[?&]_rsc=/.test(url);
+  url.includes('/__feel/') || url.includes('/__open-in-editor') || url.includes('/__nextjs') || url.includes('/_next/') || /[?&]_rsc=/.test(url);
 
 // --- fetch ----------------------------------------------------------------
 window.fetch = async function (input, init) {

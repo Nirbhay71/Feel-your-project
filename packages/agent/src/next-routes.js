@@ -11,7 +11,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { findTopLevelFunction } from './ast.js';
+import { findTopLevelFunction, boundNames } from './ast.js';
 import { loadFile, resolveImport } from './files.js';
 
 export const NEXT_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
@@ -88,8 +88,10 @@ export function findNextRoot(absFile, projectDir) {
 export async function nextRoutesIn(file, ast, info) {
   const found = info.kind === 'pages' ? await pagesHandler(file, ast) : await appHandlers(file, ast);
   const routes = [];
-  for (const { method, target } of found) {
-    const route = { file, method, path: info.path, fullPath: info.path, line: target.line, handlerIndex: 0, direct: true, handlerTarget: target };
+  for (const { method, target, line } of found) {
+    // line: where the route file exports it — the function's own line when
+    // it's written there, else the export (a re-export from another file).
+    const route = { file, method, path: info.path, fullPath: info.path, line: line ?? target.line, handlerIndex: 0, direct: true, handlerTarget: target };
     routes.push(route);
     // [[...slug]] also matches the folder itself: /api/docs as well as /api/docs/a/b
     if (info.optionalCatchAll) {
@@ -102,6 +104,8 @@ export async function nextRoutesIn(file, ast, info) {
 
 // export async function GET() {}     export const POST = async () => {}
 // export { handler as PUT }          export { DELETE } from './shared'
+// export const { GET, POST } = handlers   (Auth.js)
+// (`export * from …` isn't followed: its names aren't written in the file.)
 async function appHandlers(file, ast) {
   const out = [];
   for (const stmt of ast.program.body) {
@@ -111,7 +115,7 @@ async function appHandlers(file, ast) {
       out.push({ method: decl.id.name, target: { file, line: decl.loc.start.line } });
     } else if (decl?.type === 'VariableDeclaration') {
       for (const d of decl.declarations) {
-        if (d.id.type === 'Identifier' && NEXT_METHODS.includes(d.id.name)) out.push({ method: d.id.name, target: { file, line: d.loc.start.line } });
+        for (const name of boundNames(d.id)) if (NEXT_METHODS.includes(name)) out.push({ method: name, target: { file, line: d.loc.start.line } });
       }
     }
     for (const spec of stmt.specifiers ?? []) {
@@ -119,7 +123,8 @@ async function appHandlers(file, ast) {
       if (spec.type !== 'ExportSpecifier' || !NEXT_METHODS.includes(exported)) continue;
       const local = spec.local.name ?? spec.local.value;
       const target = stmt.source ? await importedFunction(file, stmt.source.value, local) : localFunction(file, ast, local);
-      out.push({ method: exported, target: target ?? { file, line: spec.loc.start.line } });
+      const exportLine = spec.loc.start.line;
+      out.push({ method: exported, target: target ?? { file, line: exportLine }, line: target?.file === file ? target.line : exportLine });
     }
   }
   return out;

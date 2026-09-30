@@ -79,6 +79,7 @@ test('Next locator, Turbopack: sectioned chunk map, library section, always fetc
     at other (http://localhost:3000/somewhere/else.js:1:1)`;
   const frames = await resolveStack(stack, { locate, display, context: { origin: 'http://localhost:3000' } });
   assert.deepEqual(summary(frames), ['loadItems@lib/api.js:3', '[swr]', 'List@components/List.jsx:2']);
+  assert.equal(frames[0].column, 21, 'columns are 1-based on both ends');
   assert.deepEqual([...new Set(fetched)], ['http://localhost:3000/_next/static/chunks/app.js.map'], 'one map, from the request origin only');
 });
 
@@ -107,6 +108,79 @@ test('Next locator: no origin, or a map that is not there → frame skipped', as
   const locate = createNextLocator({ root: ROOT, fetch: async () => new Response('nope', { status: 500 }) });
   assert.equal(await locate('http://localhost:3000/_next/static/chunks/a.js', 1, 1, {}), null);
   assert.equal(await locate('http://localhost:3000/_next/static/chunks/a.js', 1, 1, { origin: 'http://localhost:3000' }), null);
+});
+
+// Turbopack, after you edit lib/api.js: the new module code runs under the
+// chunk URL + ?id=<module> (with parentheses in it), counting lines from the
+// module's first line. The chunk served now names the module on its line 41.
+const HOT = 'http://localhost:3000/_next/static/chunks/app.js?id=%255Bproject%255D/lib/api.js+%255Bapp-client%255D+(ecmascript)';
+function hotChunk(source) {
+  const importLine = 'var api = ctx.i("[project]/lib/api.js [app-client] (ecmascript)");'; // mentions it, doesn't define it
+  const text = [...Array(20).fill('//'), importLine, ...Array(19).fill('//'), '"[project]/lib/api.js [app-client] (ecmascript)", ((ctx) => {', ...Array(10).fill('//')].join('\n');
+  // The module's line 3 (fetch) is chunk line 43 → api.js line 3.
+  const map = { version: 3, sections: [{ offset: { line: 40, column: 0 }, map: mapOf(API, source) }] };
+  return async (url) => new Response(url.endsWith('.map') ? JSON.stringify(map) : text);
+}
+
+test('Next locator, Turbopack hot reload: ?id= frames are found through the chunk served now', async () => {
+  const locate = createNextLocator({ root: ROOT, fetch: hotChunk(pathToFileURL(path.join(ROOT, 'lib', 'api.js')).href) });
+  const stack = `Error\n    at loadItems (${HOT}:3:21)\n    at List (http://localhost:3000/_next/static/chunks/app.js?id=x:999:1)`;
+  const frames = await resolveStack(stack, { locate, display, context: { origin: 'http://localhost:3000' } });
+  assert.deepEqual(summary(frames), ['loadItems@lib/api.js:3']);
+});
+
+test('Next locator, Turbopack hot reload: a chunk that does not match → the file, at the function the frame names', async () => {
+  // The chunk has moved on (its map says another file): the id still says
+  // lib/api.js, and the frame is named loadItems — line 2 of api.js.
+  const locate = createNextLocator({ root: ROOT, fetch: hotChunk(pathToFileURL(path.join(ROOT, 'components', 'List.jsx')).href) });
+  const frames = await resolveStack(`Error\n    at loadItems (${HOT}:3:21)`, { locate, display, context: { origin: 'http://localhost:3000' } });
+  assert.deepEqual(summary(frames), ['loadItems@lib/api.js:2']);
+  const firefox = await resolveStack(`loadItems@${HOT}:3:21`, { locate, display, context: { origin: 'http://localhost:3000' } });
+  assert.deepEqual(summary(firefox), ['loadItems@lib/api.js:2']);
+
+  const lib = await createNextLocator({ root: ROOT, fetch: hotChunk('x') })(
+    'http://localhost:3000/_next/static/chunks/a.js?id=%255Bproject%255D/node_modules/swr/dist/index.js+%255Bapp-client%255D+(ecmascript)', 1, 1, { origin: 'http://localhost:3000' });
+  assert.deepEqual(lib, { lib: 'swr' });
+});
+
+test('Next locator: basePath — bundles live under it, and so does /__nextjs_source-map', async () => {
+  const fetched = [];
+  const chunkMap = { version: 3, sections: [{ offset: { line: 0, column: 0 }, map: mapOf(API, pathToFileURL(path.join(ROOT, 'lib', 'api.js')).href) }] };
+  const fetch = async (url) => {
+    fetched.push(url);
+    return new Response(JSON.stringify(chunkMap));
+  };
+  const locate = createNextLocator({ root: ROOT, basePath: '/docs', fetch });
+  const ctx = { origin: 'http://127.0.0.1:3000' };
+  assert.equal((await locate('http://localhost:3000/docs/_next/static/chunks/app.js', 3, 21, ctx)).line, 3);
+  assert.equal(await locate('http://localhost:3000/_next/static/chunks/app.js', 3, 21, ctx), null, 'outside the basePath: not this app');
+  await locate('webpack-internal:///(app-pages-browser)/./lib/api.js', 3, 21, ctx);
+  assert.deepEqual(fetched, ['http://127.0.0.1:3000/docs/_next/static/chunks/app.js.map', `http://127.0.0.1:3000/docs/__nextjs_source-map?filename=${encodeURIComponent('webpack-internal:///(app-pages-browser)/./lib/api.js')}`]);
+});
+
+test('Next locator: a map that never arrives is given up on', async () => {
+  const hang = (url, { signal }) => new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+  const locate = createNextLocator({ root: ROOT, fetch: hang, timeout: 50 });
+  const started = Date.now();
+  const alive = setTimeout(() => {}, 5000); // AbortSignal.timeout doesn't hold the process open; a server would
+  assert.equal(await locate('http://localhost:3000/_next/static/chunks/a.js', 1, 1, { origin: 'http://localhost:3000' }), null);
+  clearTimeout(alive);
+  assert.ok(Date.now() - started < 2000);
+});
+
+test('Next locator: only the 50 most recent maps are kept', async () => {
+  const fetched = [];
+  const fetch = async (url) => {
+    fetched.push(url);
+    return new Response('', { status: 404 });
+  };
+  const locate = createNextLocator({ root: ROOT, fetch, ttl: 60_000 });
+  const at = (i) => locate(`http://localhost:3000/_next/static/chunks/c${i}.js`, 1, 1, { origin: 'http://localhost:3000' });
+  for (let i = 0; i < 51; i++) await at(i);
+  await at(50); // recent: cached
+  assert.equal(fetched.length, 51);
+  await at(0); // pushed out by the other 50
+  assert.equal(fetched.length, 52);
 });
 
 test('normalizeSource: map source names → files', () => {

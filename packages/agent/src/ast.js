@@ -125,6 +125,17 @@ export function findTopLevelFunction(ast, name) {
   return found;
 }
 
+// Every name a declaration binds: GET, { GET, POST: post }, [a, ...rest], { x = 1 }.
+export function boundNames(node) {
+  if (!node) return [];
+  if (node.type === 'Identifier') return [node.name];
+  if (node.type === 'ObjectPattern') return node.properties.flatMap((p) => boundNames(p.type === 'RestElement' ? p.argument : p.value));
+  if (node.type === 'ArrayPattern') return node.elements.flatMap(boundNames);
+  if (node.type === 'AssignmentPattern') return boundNames(node.left);
+  if (node.type === 'RestElement') return boundNames(node.argument);
+  return [];
+}
+
 // Calls that take a callback but return something that isn't that callback.
 const NOT_A_WRAPPER = /^(setTimeout|setInterval|setImmediate|requestAnimationFrame|requestIdleCallback|queueMicrotask|then|catch|finally|map|forEach|filter|reduce|find|findIndex|some|every|flatMap|sort|addEventListener|removeEventListener|on|once|subscribe)$/;
 

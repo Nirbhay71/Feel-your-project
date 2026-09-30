@@ -42,12 +42,13 @@ const STACK_LIMIT = 100;
 // Returns { file, line, column } (all null if there is none).
 export function callerSite() {
   for (const site of stackSites(callerSite)) {
-    const file = fileOf(site);
+    const name = nameOf(site);
+    const file = name && toPath(name);
     if (!file || file.startsWith(THIS_DIR) || isLibrary(file)) continue;
     const pos = { file, line: site.getLineNumber(), column: site.getColumnNumber() };
     if (!isBundled(file)) return pos;
     // Next.js runs a bundle of your code: map the frame back to your file.
-    const mapped = mapBundled(pos);
+    const mapped = mapBundled(name, pos);
     if (mapped && !isLibrary(mapped.file)) return mapped;
   }
   return siteStore.getStore() ?? NONE;
@@ -60,14 +61,21 @@ export function callerSite() {
 // next to it), webpack evals each module as webpack-internal:///(rsc)/./lib/db.ts
 // with an inline map. Next starts Node with --enable-source-maps, so
 // findSourceMap() knows both; the .map on disk covers the case where it doesn't.
+//
+// After a hot reload Turbopack runs the new code of the edited module under
+// its own name, file:///…/chunks/x.js?<module id> — the query is what tells
+// it apart from the chunk's first version, so maps are looked up by that
+// full name first; the plain path would find the old map.
 
 const NEXT_DIR = `${path.sep}.next${path.sep}`;
 const isBundled = (file) => file.includes(NEXT_DIR) || file.startsWith('webpack-internal:');
 
 const diskMaps = new Map(); // bundle file → { mtimeMs, map }
 
-function mapBundled({ file, line, column }) {
-  const map = sourceMapOf(file);
+// name: the frame's script name as V8 reports it (a file:// URL with its
+// query, a path, or webpack-internal:///…); pos.file: the same as a path.
+function mapBundled(name, { file, line, column }) {
+  const map = knownSourceMap(name) ?? sourceMapOf(file);
   if (!map || line == null) return null;
   const origin = map.findOrigin(line, column ?? 1);
   const source = origin?.fileName;
@@ -80,13 +88,17 @@ function mapBundled({ file, line, column }) {
   return { file: mappedFile, line: origin.lineNumber, column: origin.columnNumber };
 }
 
-function sourceMapOf(file) {
+function knownSourceMap(name) {
   try {
-    const known = findSourceMap(file);
-    if (known) return known;
+    return findSourceMap(name) ?? null;
   } catch {
-    // not a path Node knows — try the disk
+    return null; // not a name Node knows
   }
+}
+
+function sourceMapOf(file) {
+  const known = knownSourceMap(file);
+  if (known) return known;
   if (file.startsWith('webpack-internal:')) return null; // inline maps only
   try {
     const { mtimeMs } = fs.statSync(`${file}.map`);
@@ -112,7 +124,8 @@ export function calledFrom(pkg) {
 // matters — e.g. mysql2's pool handing a query on to a connection (mysql2.js).
 export function callerFile() {
   for (const site of stackSites(callerFile)) {
-    const file = fileOf(site);
+    const name = nameOf(site);
+    const file = name && toPath(name);
     if (!file || file.startsWith(THIS_DIR)) continue;
     return file;
   }
@@ -131,12 +144,22 @@ function stackSites(below) {
   return sites;
 }
 
-// webpack's eval'd modules have no file name, only the name their
-// //# sourceURL gave them (webpack-internal:///(rsc)/./lib/db.ts).
-function fileOf(site) {
-  const file = site.getFileName() ?? site.getScriptNameOrSourceURL?.();
-  if (!file || file.startsWith('node:')) return null;
-  return file.startsWith('file:') ? fileURLToPath(file) : file;
+// The script a frame runs in, as V8 names it. webpack's eval'd modules have
+// no file name, only the name their //# sourceURL gave them
+// (webpack-internal:///(rsc)/./lib/db.ts). null for Node's own modules.
+function nameOf(site) {
+  const name = site.getFileName() ?? site.getScriptNameOrSourceURL?.();
+  return !name || name.startsWith('node:') ? null : name;
+}
+
+// file:///app/x.js?123 → /app/x.js; anything else stays as it is.
+function toPath(name) {
+  if (!name.startsWith('file:')) return name;
+  try {
+    return fileURLToPath(name);
+  } catch {
+    return null;
+  }
 }
 
 const isLibrary = (file) => file.includes(`${path.sep}node_modules${path.sep}`);

@@ -52,6 +52,27 @@ test('Turbopack chunk: the .js.map next to it (sectioned) leads back to your fil
   assert.equal(fromLib.file, THIS_FILE);
 });
 
+// Runs before any test turns on source maps, so Node doesn't know this
+// chunk's map and callerSite() reads the .map file from disk.
+test('Turbopack chunk: a rewritten .map on disk is read again (cached by mtime)', () => {
+  const dir = path.join(TMP, '.next', 'dev', 'server', 'chunks');
+  fs.mkdirSync(dir, { recursive: true });
+  const chunkFile = path.join(dir, 'mtime.js');
+  fs.writeFileSync(chunkFile, '// chunk\nexports.query = function (cs) {\n  return cs();\n};\n');
+  const user = '// db\nexport function query(cs) {\n  return cs();\n}\n';
+  fs.writeFileSync(`${chunkFile}.map`, JSON.stringify(mapOf(user, pathToFileURL(DB_FILE).href)));
+  const bundle = createRequire(import.meta.url)(chunkFile);
+  assert.equal(bundle.query(callerSite).line, 3);
+
+  // Same chunk path, new map (the module moved two lines down in db.js).
+  const moved = new MagicString(`// db\n\n\n${user.slice(6)}`);
+  moved.remove(6, 8); // the bundle doesn't have the two new blank lines
+  fs.writeFileSync(`${chunkFile}.map`, JSON.stringify(moved.generateMap({ hires: true, source: pathToFileURL(DB_FILE).href })));
+  const later = new Date(Date.now() + 5000);
+  fs.utimesSync(`${chunkFile}.map`, later, later);
+  assert.equal(bundle.query(callerSite).line, 5);
+});
+
 test('webpack eval module: found by its sourceURL (webpack-internal:///…) and its inline map', () => {
   // next dev runs Node with --enable-source-maps, which is what lets Node
   // know the maps of eval'd code; turn the same on here.
@@ -67,6 +88,33 @@ test('webpack eval module: found by its sourceURL (webpack-internal:///…) and 
   const site = fn(callerSite);
   assert.equal(site.file, DB_FILE);
   assert.equal(site.line, 3);
+});
+
+test('Turbopack hot reload: the new module (chunk.js?<id>) is mapped by its own name, not the old chunk map', () => {
+  process.setSourceMapsEnabled(true);
+  const dir = path.join(TMP, '.next', 'dev', 'server', 'chunks');
+  fs.mkdirSync(dir, { recursive: true });
+  const chunkFile = path.join(dir, 'hot.js');
+
+  // First version: the query on line 3 of db.js, which is line 3 of the chunk.
+  const v1 = '// db\nexports.query = function (cs) {\n  return cs();\n};\n';
+  const v1Map = mapOf('// db\nexport function query(cs) {\n  return cs();\n}\n', pathToFileURL(DB_FILE).href);
+  fs.writeFileSync(chunkFile, `${v1}//# sourceMappingURL=hot.js.map\n`);
+  fs.writeFileSync(`${chunkFile}.map`, JSON.stringify(v1Map));
+  assert.equal(createRequire(import.meta.url)(chunkFile).query(callerSite).line, 3);
+
+  // You add two lines above it; Turbopack evaluates the new module code
+  // under the chunk's URL + ?<module id>, with its own map (now line 5).
+  const edited = '// db\n// one\n// two\nexport function query(cs) {\n  return cs();\n}\n';
+  const s = new MagicString(edited);
+  s.overwrite(0, edited.indexOf('  return'), '(function (cs) {\n');
+  s.overwrite(edited.indexOf('}\n'), edited.length, '})');
+  const inline = Buffer.from(JSON.stringify(s.generateMap({ hires: true, source: pathToFileURL(DB_FILE).href }))).toString('base64');
+  const name = `${pathToFileURL(chunkFile).href}?42`;
+  const fn = (0, eval)(`${s.toString()}\n//# sourceURL=${name}\n//# sourceMappingURL=data:application/json;base64,${inline}`);
+  const site = fn(callerSite);
+  assert.equal(site.file, DB_FILE);
+  assert.equal(site.line, 5, 'the edited file’s line, not the old chunk’s');
 });
 
 test.after(() => fs.rmSync(TMP, { recursive: true, force: true }));

@@ -28,7 +28,8 @@ import { createDb } from './db.js';
 import { possibleCalls } from './static.js';
 import { setViteAliases } from './resolve.js';
 
-export { parseCode, traverse, findComponent, functionName } from './ast.js';
+export { parseCode, traverse, findComponent, functionName, findTopLevelFunction, boundNames } from './ast.js';
+export { resolveImport } from './resolve.js';
 export { tagJsx } from './transform.js';
 export { nextRouteInfo } from './next-routes.js';
 export { viteFrameLocator, libraryName } from './stack.js';
@@ -37,6 +38,8 @@ export const AGENT_ROUTE = '/__feel';
 
 // Only these files can ever be read — never .env, keys, etc.
 const SOURCE_FILE = /\.(jsx?|tsx?|mjs|cjs)$/;
+// Build output is generated code (and may hold inlined secrets): never read.
+const BUILD_DIRS = new Set(['.next', 'dist', 'build', '.vite', 'coverage', '.svelte-kit', '.turbo']);
 
 const LANGUAGES = { js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'typescript', tsx: 'typescript' };
 
@@ -91,7 +94,8 @@ export function createAgentHandler({ root, projectRoot, getModule, locateFrame, 
   const safePath = (file) => {
     if (!file) throw new HttpError(400, 'Missing ?file=');
     const abs = path.resolve(rootDir, file);
-    if (!abs.startsWith(projectDir + path.sep) || !SOURCE_FILE.test(abs) || abs.includes(`${path.sep}node_modules${path.sep}`)) {
+    const inBuild = path.relative(projectDir, abs).split(path.sep).some((part) => BUILD_DIRS.has(part));
+    if (!abs.startsWith(projectDir + path.sep) || !SOURCE_FILE.test(abs) || abs.includes(`${path.sep}node_modules${path.sep}`) || inBuild) {
       throw new HttpError(403, 'File is outside the project or not a source file');
     }
     return abs;
@@ -179,10 +183,13 @@ export function createAgentHandler({ root, projectRoot, getModule, locateFrame, 
     // open in the same browser can't read our responses (no CORS), but it
     // could still *send* a POST — e.g. one that installs audit triggers.
     //  - a browser always sends Origin on cross-site requests: it must be us
+    //  - …and Sec-Fetch-Site on every request: "cross-site" is never us,
+    //    even where some browser leaves Origin out (a plain GET)
     //  - POSTs need the X-Feel header, which a cross-site page can't add
     //    without a CORS preflight that we never approve
     const origin = req.headers.origin;
     if (origin && hostOf(origin) !== req.headers.host) return { status: 403, body: { error: 'Cross-origin request refused' } };
+    if (req.headers['sec-fetch-site'] === 'cross-site') return { status: 403, body: { error: 'Cross-site request refused' } };
     if (req.method === 'POST' && req.headers['x-feel'] !== '1') return { status: 403, body: { error: 'Missing X-Feel header' } };
 
     try {

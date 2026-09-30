@@ -23,13 +23,23 @@
   },
   "type": "module",
   "exports": {
-    ".": "./src/index.js",
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
     "./client": {
+      "types": "./types/side-effect.d.ts",
       "development": "./src/client.js",
       "default": "./src/empty.js"
     },
-    "./agent": "./src/agent.js",
-    "./register": "./src/register.js",
+    "./agent": {
+      "types": "./types/agent.d.ts",
+      "default": "./src/agent.js"
+    },
+    "./register": {
+      "types": "./types/side-effect.d.ts",
+      "default": "./src/register.js"
+    },
     "./runtime": "./src/runtime.js",
     "./loader": "./src/loader.cjs",
     "./axios": "./src/empty.js",
@@ -38,6 +48,7 @@
   },
   "files": [
     "src",
+    "types",
     "README.md",
     "LICENSE"
   ],
@@ -52,11 +63,12 @@
     "magic-string": "^0.30.0"
   },
   "peerDependencies": {
-    "next": ">=15.3"
+    "next": ">=16"
   },
   "peerDependenciesMeta": {
     "next": {
       "optional": true
     }
-  }
+  },
+  "types": "./types/index.d.ts"
 }

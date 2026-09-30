@@ -9,14 +9,18 @@
 // locator is passed in (Vite's is below, Next's is in @feel-dev/next).
 
 import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
-import { functionAtLine, findNamedFunction, findComponent, functionName } from './ast.js';
+import { traverse, functionAtLine, findNamedFunction, findComponent, functionName } from './ast.js';
 import { loadFile } from './files.js';
 
 // Matches the "url:line:col" at the end of a Chrome or Firefox stack line.
 // Next's webpack mode names modules webpack-internal:///(app-pages-browser)/./lib/api.js
 // — kept as the raw text, because new URL() would drop the "./" and the
-// dev server only finds the module by its exact name.
-const FRAME = /(https?:\/\/[^\s()]+?|webpack-internal:\/\/\/\S+?):(\d+):(\d+)\)?\s*$/;
+// dev server only finds the module by its exact name. URLs may hold
+// parentheses: Turbopack's hot-reloaded modules run from
+// …/chunk.js?id=%255Bproject%255D/lib/api.js+%255Bapp-client%255D+(ecmascript).
+const FRAME = /(https?:\/\/\S+?|webpack-internal:\/\/\/\S+?):(\d+):(\d+)\)?\s*$/;
+// The function a Chrome ("at load (…)") or Firefox ("load@…") line names.
+const FRAME_NAME = /^\s*(?:at\s+(?:async\s+)?(?:new\s+)?([^\s(]+)\s+\(|([^@\s]+)@)/;
 
 // Frames from these URLs are libraries or our own tooling — skip them.
 const IGNORE = ['/node_modules/', '/@vite/', '/@feel-dev/', '/@react-refresh', '/@id/'];
@@ -28,6 +32,8 @@ const BORING_LIBS = /^(react|react-dom|scheduler|next)(\/|$)/;
 
 // locate(raw, line, column, context) → where a frame really is:
 //   { file, line, column }   your code (absolute file, original position)
+//   { file, line: null }     your code, but the position couldn't be trusted:
+//                            the frame points at the function it names
 //   { lib: 'axios' }         a library (lib may be null when it can't be named)
 //   null                     unknown — skipped
 // Vite's is viteFrameLocator below; Next's lives in @feel-dev/next.
@@ -53,8 +59,8 @@ export async function resolveStack(stack, { locate, display, context }) {
       continue;
     }
 
-    const { line, column } = loc;
     const loaded = await loadFile(loc.file).catch(() => null);
+    const { line, column } = loc.line == null ? namedPosition(loaded?.ast, text) : loc;
     const fnPath = loaded?.ast && functionAtLine(loaded.ast, line);
     const named = fnPath && findNamedFunction(fnPath);
     const component = fnPath && findComponent(fnPath);
@@ -97,6 +103,24 @@ export function viteFrameLocator(getModule) {
     }
     return { file: mod.file, line, column };
   };
+}
+
+// Where the function a stack line names starts — for a frame whose file is
+// known but not its line. Line 1 when the name isn't found.
+function namedPosition(ast, text) {
+  const m = text.match(FRAME_NAME);
+  const name = (m?.[1] ?? m?.[2] ?? '').split('.').pop();
+  let line = 1;
+  if (ast && name) {
+    traverse(ast, {
+      Function(p) {
+        if (functionName(p) !== name) return;
+        line = p.node.loc.start.line;
+        p.stop();
+      },
+    });
+  }
+  return { line, column: 1 };
 }
 
 const isLibraryFile = (file) => /[\\/]node_modules[\\/]/.test(file);
