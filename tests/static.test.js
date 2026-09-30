@@ -118,3 +118,16 @@ test('orm: one Drizzle chain is one query, labelled as written', async () => {
   assert.equal(call.route.queries.length, 1);
   assert.match(call.route.queries[0].sql, /^db \.select\(\) \.from\(orders\) \.leftJoin\(users/);
 });
+
+// --- mysql2 fixture (raw pool.execute / pool.query, Drizzle's mysql2 driver) ----------
+
+const MYSQL = path.join(HERE, 'fixtures', 'mysql-app');
+const mysqlApp = (file, component) => callsOf(MYSQL, path.join(MYSQL, 'client'), file, component);
+
+test('mysql: pool.execute and pool.query({ sql }) SQL; db.execute(sql`…`) and bus.execute are not raw SQL', async () => {
+  assert.deepEqual(await mysqlApp('src/Users.jsx', 'Users'), [
+    { call: 'GET /api/lookup', route: 'GET /api/lookup', handler: null, tables: ['products', 'users✎'] },
+    { call: 'GET /api/stats', route: 'GET /api/stats', handler: null, tables: ['orders'] },
+    { call: 'GET /api/users', route: 'GET /api/users', handler: null, tables: ['users'] },
+  ]);
+});

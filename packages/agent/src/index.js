@@ -35,6 +35,10 @@ const SOURCE_FILE = /\.(jsx?|tsx?|mjs|cjs)$/;
 
 const LANGUAGES = { js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'typescript', tsx: 'typescript' };
 
+const MYSQL_URL = /^(mysql2?|mariadb):\/\//i;
+const MYSQL_TABLE_VIEW =
+  'Table view is Postgres-only for now — feel({ database }) got a MySQL URL. MySQL queries and tables still show per request.';
+
 class HttpError extends Error {
   constructor(status, message) {
     super(message);
@@ -47,14 +51,20 @@ class HttpError extends Error {
 //              is ever read. Default: the nearest folder above `root` with a
 //              .git, so client/ + server/ side by side both work.
 // getModule:   url → { file, map } from Vite's module graph (for /stack)
-// database:    optional Postgres connection string (for /db/*)
+// database:    optional Postgres connection string (for /db/*). A MySQL URL
+//              is accepted, but the table view is Postgres-only for now.
 // aliases:     Vite's resolved resolve.alias, so '@/…' imports can be followed
 export function createAgent({ root, projectRoot, getModule, database, aliases }) {
   const rootDir = path.resolve(root);
   const projectDir = projectRoot ? path.resolve(projectRoot) : findProjectRoot(rootDir);
   setViteAliases(aliases, rootDir);
-  const db = database ? createDb(database) : null;
+  // MySQL queries and tables still show per request (they come from
+  // @feel-dev/node); only the table view below needs Postgres. Never hand a
+  // MySQL URL to pg — it would try to connect.
+  const isMysql = typeof database === 'string' && MYSQL_URL.test(database);
+  const db = database && !isMysql ? createDb(database) : null;
   const requireDb = () => {
+    if (isMysql) throw new HttpError(501, MYSQL_TABLE_VIEW);
     if (!db) throw new HttpError(503, 'No database configured — pass feel({ database: url })');
     return db;
   };
@@ -136,6 +146,9 @@ export function createAgent({ root, projectRoot, getModule, database, aliases })
     async 'GET /db/changes'(q) {
       const request = q.get('request');
       if (!request) throw new HttpError(400, 'Missing ?request=');
+      // The panel asks after every write — answer "no tracked changes"
+      // quietly instead of an error each time.
+      if (isMysql) return { audit: false, changes: [] };
       return requireDb().changesForRequest(request);
     },
 

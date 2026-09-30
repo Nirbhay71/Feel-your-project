@@ -31,7 +31,8 @@ const AXIOS_ID = '\0feel-axios';
 const AXIOS_PATCH_FILE = path.join(path.dirname(CLIENT_FILE), 'axios.js').split(path.sep).join('/');
 
 // options.database:    Postgres connection string, so the panel can show table
-//                      structure and changes (Layer 3). Optional.
+//                      structure and changes (Layer 3). Optional. MySQL URLs
+//                      are accepted, but the table view is Postgres-only.
 // options.projectRoot: folder holding frontend *and* backend, if the nearest
 //                      .git above Vite's root isn't it. Optional.
 export default function feel(options = {}) {

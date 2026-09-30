@@ -14,8 +14,8 @@
 //   2. backendRoutes: scan the project for Express routes and app.use()
 //      mounts to get each route's full path.
 //   3. matchRoute: URL pattern ↔ route path (":id" and "*" are wildcards).
-//   4. routeQueries: walk the handler's call graph for pool.query('…') SQL
-//      and Prisma / Drizzle calls (orm.js).
+//   4. routeQueries: walk the handler's call graph for pool.query('…') /
+//      pool.execute('…') SQL and Prisma / Drizzle calls (orm.js).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -570,8 +570,8 @@ async function describeRoute(route, rootDir) {
   };
 }
 
-// Every db.query('SQL') / pool.query(`SQL`) reachable from the handler, and
-// every Prisma / Drizzle call (see orm.js).
+// Every db.query('SQL') / pool.query(`SQL`) / pool.execute('SQL') reachable
+// from the handler, and every Prisma / Drizzle call (see orm.js).
 async function queriesIn(file, fn, rootDir) {
   const out = [];
   const seen = new Set();
@@ -581,11 +581,13 @@ async function queriesIn(file, fn, rootDir) {
       CallExpression(p) {
         const c = p.node.callee;
         if (c.type !== 'MemberExpression') return;
-        if (c.property.name !== 'query') return void candidates.push(p);
-        const arg = p.get('arguments')[0];
-        let sql = null;
-        if (arg?.isStringLiteral()) sql = arg.node.value;
-        else if (arg?.isTemplateLiteral()) sql = arg.node.quasis.map((q) => q.value.cooked).join('0');
+        const method = c.property.name;
+        if (!RAW_SQL.has(method)) return void candidates.push(p);
+        const sql = sqlArg(p.get('arguments')[0]);
+        // .execute() is also Drizzle's db.execute(sql`…`) and many a
+        // non-database method (bus.execute('CreateUser')) — only SQL-looking
+        // text counts, the rest goes to the ORM check like any other call.
+        if (method === 'execute' && !LOOKS_SQL.test(sql ?? '')) return void candidates.push(p);
         if (!sql) return;
         const key = `${node.file}:${p.node.loc.start.line}`;
         if (seen.has(key)) return;
@@ -616,6 +618,20 @@ async function queriesIn(file, fn, rootDir) {
     }
   }
   return out;
+}
+
+// Raw SQL methods: pg's .query(), mysql2's .query() and .execute().
+const RAW_SQL = new Set(['query', 'execute']);
+const LOOKS_SQL = /^\s*(select|insert|update|delete|replace|with)\b/i;
+
+// The SQL text passed to query() / execute(), when it's written right there:
+//   'SELECT …'   `SELECT …`   { sql: 'SELECT …', values }   (mysql2 options)
+// Plain templates only — sql`…` (a tagged template) is Drizzle's, not text.
+function sqlArg(arg) {
+  if (arg?.isObjectExpression()) arg = propertyOf(arg, 'sql');
+  if (arg?.isStringLiteral()) return arg.node.value;
+  if (arg?.isTemplateLiteral()) return arg.node.quasis.map((q) => q.value.cooked).join('0');
+  return null;
 }
 
 // a.b().c().d() — the outermost call of the chain a call sits in.

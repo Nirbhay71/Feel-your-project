@@ -2,11 +2,11 @@
 //
 //   import '@feel-dev/node/register';
 //
-// It patches Express, pg and Drizzle (whichever are installed) before your
+// It patches Express, pg, mysql2 and Drizzle (whichever are installed) before your
 // own files run. Does nothing in production.
 
 import { createRequire } from 'node:module';
-import { instrumentExpress, instrumentPg, instrumentDrizzle } from './index.js';
+import { instrumentExpress, instrumentPg, instrumentMysql2, instrumentDrizzle } from './index.js';
 
 const DIALECTS = ['pg-core', 'mysql-core', 'sqlite-core'];
 
@@ -28,6 +28,12 @@ if (process.env.NODE_ENV !== 'production') {
 
   const pg = tryRequire('pg');
   if (pg) instrumentPg(pg);
+
+  // mysql2 is CommonJS only (no "import" condition in its exports), so
+  // `import mysql from 'mysql2/promise'` loads the same lib/* modules this
+  // require patches.
+  const mysql2 = tryRequire('mysql2');
+  if (mysql2) instrumentMysql2(mysql2);
 
   // Drizzle ships two copies: CommonJS for require(), ES modules for import.
   // Patch both — whichever your server uses. The ES copy loads

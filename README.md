@@ -71,13 +71,16 @@ Full setup guide: [packages/vite-plugin/README.md](packages/vite-plugin/README.m
 | Imports | relative, Vite `resolve.alias`, tsconfig/jsconfig `paths` + `baseUrl`, `package.json` `"imports"` |
 | Backend | Express 4 and 5 — ES modules or CommonJS, routers, `app.use` mounts, controllers |
 | Database | Postgres: queries per request, tables, structure, change history — through `pg`, **Prisma** (7, or 6 with `@prisma/adapter-pg`) or **Drizzle** (`drizzle-orm/node-postgres`) |
+| | **MySQL / MariaDB**: queries per request, tables, timing and the line in your code — through `mysql2` (callbacks or `mysql2/promise`, pools, `getConnection`, transactions) or **Drizzle** (`drizzle-orm/mysql2`) |
 | Other ORMs on `pg` | Knex, Sequelize, TypeORM, …: SQL and tables per request; the line in your code when the ORM keeps it on the stack |
 | Layout | frontend and backend in one folder or side by side (`client/` + `server/`) |
 
 ## Not yet
 
 - **Prisma's Rust engine** (Prisma 6 and older without a driver adapter) — its queries don't go through `pg`
-- **MySQL / SQLite** drivers — the static side understands Drizzle's MySQL and SQLite tables, the runtime side is Postgres only
+- **MySQL table view and change history** — MySQL queries and tables show per request, but the table view is Postgres only
+- **Other MySQL paths**: the `mysql` and `mariadb` drivers, Prisma on MySQL, and prepared statements made with `connection.prepare()`
+- **SQLite** — the static side understands Drizzle's SQLite tables, the runtime side doesn't yet
 - **Next.js**, Create React App, Vue, Svelte — Feel needs Vite + React today
 - **Supabase** (browser talks to the database directly)
 - React 18 and older show a simpler, DOM-based component chain
@@ -91,7 +94,7 @@ Want one of these? See [CONTRIBUTING.md](CONTRIBUTING.md) — PRs very welcome.
 | [`@feel-dev/vite-plugin`](packages/vite-plugin) | Vite | tags every JSX element with its file:line, tags components, injects the client |
 | [`@feel-dev/client`](packages/client) | browser | Alt + right-click, React fiber chain, captures fetch/XHR/axios with stack traces, the panel |
 | [`@feel-dev/agent`](packages/agent) | Vite dev server | maps stacks through sourcemaps, builds the call graph, static analysis, reads Postgres |
-| [`@feel-dev/node`](packages/node) | your backend | reports the Express route, handler and SQL of each request (raw `pg`, Prisma, Drizzle) in a response header |
+| [`@feel-dev/node`](packages/node) | your backend | reports the Express route, handler and SQL of each request (raw `pg`/`mysql2`, Prisma, Drizzle) in a response header |
 
 ## Try the demo
 

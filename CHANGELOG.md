@@ -19,6 +19,14 @@ Feel now sees through ORMs.
   to tables through `schema.prisma` (incl. `@@map`), Drizzle tables through
   `pgTable('name')` / `mysqlTable` / `sqliteTable`, re-exports and
   `drizzle(…, { schema })`.
+- **MySQL / MariaDB** via `mysql2` (callbacks, `mysql2/promise`, pools,
+  `getConnection()`, transactions) and `drizzle-orm/mysql2`: SQL, tables,
+  timing, rows and the line in your code for every query a request runs.
+  Tables are found in MySQL SQL too — backticks, `?` placeholders,
+  `INSERT IGNORE`, `REPLACE`, `ON DUPLICATE KEY UPDATE`, `LIMIT 10, 20`.
+  Possible calls list `pool.execute('SQL')`. The table view stays
+  Postgres-only; prepared statements made with `connection.prepare()` aren't
+  recorded yet.
 
 ### Changed
 

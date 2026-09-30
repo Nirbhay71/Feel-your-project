@@ -1,12 +1,14 @@
 // Drizzle: remember which line of your code built each query.
 //
-// The SQL itself is already caught by the pg patch — Drizzle sends it
-// through pg. What's missing is the line. Drizzle queries are lazy:
+// The SQL itself is already caught by the pg or mysql2 patch — Drizzle
+// sends it through that driver. What's missing is the line. Drizzle
+// queries are lazy:
 //
 //   const rows = await db.select().from(users).where(…);   // users.js:12
 //
 // builds a query object on that line, and `await` calls its then() later,
-// from an empty stack. So by the time pg sees the SQL, users.js:12 is gone.
+// from an empty stack. So by the time the driver sees the SQL, users.js:12
+// is gone.
 //
 // Fix: when your code calls db.select() / db.insert() / db.query.x.findMany()
 // / …, note the line and attach it to the query object that comes out of the

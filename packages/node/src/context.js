@@ -1,4 +1,4 @@
-// Per-request context, shared by the Express, pg and ORM patches.
+// Per-request context, shared by the Express, pg, mysql2 and ORM patches.
 //
 // AsyncLocalStorage keeps a value alive across every `await` and callback
 // that starts inside als.run(). So a query made deep inside a handler
@@ -42,12 +42,19 @@ export function callerSite() {
 // the given package — e.g. pg-pool handing a query on to a pg Client.
 export function calledFrom(pkg) {
   const marker = `${path.sep}node_modules${path.sep}${pkg}${path.sep}`;
-  for (const site of stackSites(calledFrom)) {
+  return callerFile()?.includes(marker) ?? false;
+}
+
+// The file of the code calling us (the first frame that isn't ours), or
+// null. For when the package isn't precise enough and the exact file
+// matters — e.g. mysql2's pool handing a query on to a connection (mysql2.js).
+export function callerFile() {
+  for (const site of stackSites(callerFile)) {
     const file = fileOf(site);
     if (!file || file.startsWith(THIS_DIR)) continue;
-    return file.includes(marker);
+    return file;
   }
-  return false;
+  return null;
 }
 
 function stackSites(below) {

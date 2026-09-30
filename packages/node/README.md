@@ -6,7 +6,10 @@ Backend half of Feel (setup guide: `@feel-dev/vite-plugin`). Tells the browser, 
 - which **SQL queries** it ran through `pg`, and the line in your code that sent each one —
   also when an ORM sends them: **Prisma** (7, or 6 with `@prisma/adapter-pg`), **Drizzle**
   (`drizzle-orm/node-postgres`), and Knex, Sequelize, TypeORM, … on `pg`
+- the same for **MySQL / MariaDB** through `mysql2` — callbacks or `mysql2/promise`, pools,
+  `getConnection()`, transactions — and **Drizzle** (`drizzle-orm/mysql2`)
 - a request id, which Postgres change tracking uses to link row changes back to the request
+  (MySQL connections aren't tagged — no extra SQL is sent, since the table view is Postgres only)
 
 ## Use
 
@@ -17,11 +20,12 @@ import '@feel-dev/node/register';        // ES modules
 require('@feel-dev/node/register');      // CommonJS (Node 20.19+)
 ```
 
-Express, `pg` and Drizzle are patched only if they're installed. Does nothing when `NODE_ENV=production`.
+Express, `pg`, `mysql2` and Drizzle are patched only if they're installed. Does nothing when `NODE_ENV=production`.
 
 ## ORMs
 
-Nothing to configure — ORMs that talk to Postgres through `pg` are picked up automatically.
+Nothing to configure — ORMs that talk to Postgres through `pg`, or to MySQL through `mysql2`,
+are picked up automatically.
 
 - **Prisma** sends each query many awaits away from your code. Feel follows Node's async
   stack frames back to your `prisma.user.findMany()` line. Batch transactions
