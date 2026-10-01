@@ -144,6 +144,24 @@ npm run db      # Postgres in Docker on :5433
 npm run demo    # API :3001 + app :5173
 ```
 
+## Troubleshooting
+
+**`npm install` reports `ERESOLVE` for Next.js.** `@feel-dev/next` needs Next.js 16 or newer.
+Upgrade the app with `npx @next/codemod@canary upgrade latest`, then install again.
+
+**Alt + right-click does nothing.** Feel runs in development with React 19. In Vite, put `feel()`
+before `react()` in the plugins list. In Next.js, use `next dev` and include the `withFeel` config,
+`instrumentation-client.js`, and the `app/%5F%5Ffeel/[...path]/route.js` route.
+
+**The Next.js agent route returns 403.** Requests from another device need its IP in
+`allowedAddresses`; a non-local host may also need `allowedHosts` or Next.js `allowedDevOrigins`.
+
+**The Next.js agent route returns 404.** Feel only serves the route under `next dev`. Check that
+`app/%5F%5Ffeel/[...path]/route.js` exports `GET` and `POST` from `@feel-dev/next/agent`.
+
+**SQL is missing for Prisma.** Prisma 6 and older need a driver adapter for Feel to see Postgres
+queries, such as `@prisma/adapter-pg`. Prisma's Rust engine does not send queries through `pg`.
+
 ## Tried it? Tell me
 
 Feel is young, and every real app finds something new. If you tried it — whether it
