@@ -127,6 +127,29 @@ app.get('/execute', async (req, res) => {
   await pool.execute('SELECT * FROM users WHERE id = ?', [1]); // POOL_EXECUTE
   res.end();
 });
+app.get('/prepared-promise', async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    const statement = await conn.prepare('SELECT 1');
+    await statement.execute(); // PROMISE_PREPARED
+    res.end();
+  } finally {
+    conn.release();
+  }
+});
+app.get('/prepared-callback', (req, res) => {
+  const conn = mysql.createConnection(config);
+  connections.push(conn);
+  conn.prepare('SELECT 2', (prepareError, statement) => {
+    if (prepareError) return res.status(500).end(prepareError.message);
+    statement.execute( // CALLBACK_PREPARED
+      (executeError) => {
+        if (executeError) return res.status(500).end(executeError.message);
+        conn.end(() => res.end());
+      },
+    );
+  });
+});
 app.get('/update', async (req, res) => {
   const [r] = await pool.query('UPDATE users SET a = 1'); // POOL_UPDATE
   res.json(r);
@@ -277,6 +300,17 @@ test('pool.execute: recorded once, not again when the pool hands it to a connect
     [['SELECT * FROM users WHERE id = ?', lineOf('POOL_EXECUTE')]],
   );
   assert.equal(typeof queries[0].duration, 'number');
+});
+
+test('prepared execute records SQL and caller line for promise and callback clients', async () => {
+  for (const [url, sql, marker] of [
+    ['/prepared-promise', 'SELECT 1', 'PROMISE_PREPARED'],
+    ['/prepared-callback', 'SELECT 2', 'CALLBACK_PREPARED'],
+  ]) {
+    const queries = await queriesOf(url);
+    assert.deepEqual(queries.map(({ sql, line }) => [sql, line]), [[sql, lineOf(marker)]]);
+    assert.equal(typeof queries[0].duration, 'number');
+  }
 });
 
 test('UPDATE: rowCount is the number of rows affected', async () => {
