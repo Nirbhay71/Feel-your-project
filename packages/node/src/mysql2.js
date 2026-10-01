@@ -51,6 +51,7 @@ export function instrumentMysql2(mysql2) {
     patch(poolProto, name, { pool: true });
     patch(connProto, name, { pool: false });
   }
+  patchPrepare(owner(mysql2.Connection?.prototype, 'prepare'));
   patchGetConnection(owner(mysql2.Pool?.prototype, 'getConnection'));
 }
 
@@ -75,6 +76,33 @@ function patchGetConnection(proto) {
   };
 }
 
+function patchPrepare(proto) {
+  const original = proto?.prepare;
+  if (typeof original !== 'function') return;
+
+  proto.prepare = function (options, callback) {
+    if (typeof callback !== 'function') return original.apply(this, arguments);
+    return original.call(
+      this,
+      options,
+      bindToRequest(function (err, statement) {
+        if (!err && statement) patchPreparedStatement(statement);
+        return callback.apply(this, arguments);
+      }),
+    );
+  };
+}
+
+function patchPreparedStatement(statement) {
+  const original = statement.execute;
+  if (typeof original !== 'function') return;
+
+  statement.execute = function (...args) {
+    const ctx = als.getStore();
+    return ctx ? run(this, original, args, ctx, false, statement.query) : original.apply(this, args);
+  };
+}
+
 function patch(proto, name, { pool }) {
   const original = proto[name];
   if (typeof original !== 'function') return;
@@ -91,9 +119,9 @@ function patch(proto, name, { pool }) {
 // Inside a request: record the query (unless it's a repeat or over the cap)
 // and bind its callback or events to the request — always, recorded or not,
 // since queries sent from that callback depend on it.
-function run(self, original, args, ctx, pool) {
+function run(self, original, args, ctx, pool, preparedSql) {
   // Read it now: Connection.query overwrites cmd.sql with the formatted SQL.
-  const sql = sqlOf(args[0]);
+  const sql = preparedSql ?? sqlOf(args[0]);
 
   // Record it now, while the caller's line is still on the stack. Cheapest
   // checks first — the stack is only read for connection calls. Queries
