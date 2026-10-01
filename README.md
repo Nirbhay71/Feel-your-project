@@ -7,11 +7,17 @@ down to the line of code, the API route, the backend handler, the SQL and the ta
 [![npm](https://img.shields.io/npm/v/@feel-dev/vite-plugin)](https://www.npmjs.com/package/@feel-dev/vite-plugin)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+Works with **React on Vite or Next.js**, **Express**, **Postgres or MySQL**, **Prisma** and **Drizzle**.
+Dev only, two-minute setup, nothing added to production.
+
+<!-- TODO: demo GIF here — Alt + right-click on a chart → the panel with the full stack
+![Feel demo](docs/demo.gif) -->
+
 ## Why
 
-More and more apps are generated or "vibe coded". They work — but nobody quite
-knows what happens under the hood. Feel answers "where does *this* come from?"
-for any piece of UI, without reading the whole codebase:
+More and more apps are generated or "vibe coded" — with Cursor, Claude Code, v0, Bolt.
+They work, but nobody quite knows what happens under the hood. Feel answers
+"where does *this* come from?" for any piece of UI, without reading the whole codebase:
 
 ```
 The "Sales this week" chart (from the demo app)
@@ -40,6 +46,8 @@ Every step opens the actual code. Calls a component *could* make but hasn't yet
 - **Dev only**: nothing is added to production builds
 
 ## Quick start
+
+### React + Vite
 
 ```bash
 npm install -D @feel-dev/vite-plugin     # in your frontend
@@ -135,6 +143,12 @@ npm install
 npm run db      # Postgres in Docker on :5433
 npm run demo    # API :3001 + app :5173
 ```
+
+## Tried it? Tell me
+
+Feel is young, and every real app finds something new. If you tried it — whether it
+worked or not — please [open an issue](https://github.com/Nirbhay71/Feel-your-project/issues/new)
+with your stack (Vite or Next, Express version, database, ORM). A star helps others find it.
 
 ## Contributing & security
 
