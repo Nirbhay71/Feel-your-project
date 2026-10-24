@@ -10,6 +10,8 @@
 // Must be imported before the app runs, so it's the first import of index.js
 // and the client script is injected at the top of <head>.
 
+import { parseSupabaseRequest } from './supabase.js';
+
 // The agent's URL for one of its routes. Vite serves it at /__feel; a
 // Next.js app with a basePath serves it under that path, which
 // @feel-dev/next/client puts in globalThis.__FEEL_BASE__ before we load.
@@ -21,6 +23,7 @@ const listeners = new Set();
 
 export const getRequests = () => requests;
 export const onRequestsChange = (fn) => listeners.add(fn);
+export { parseSupabaseRequest };
 
 const originalFetch = window.fetch;
 
@@ -131,6 +134,7 @@ window.fetch = async function (input, init) {
   const method = (init?.method ?? input?.method ?? 'GET').toUpperCase();
   const stack = captureStack(); // who called fetch — must be taken synchronously
   const start = performance.now();
+  const supabase = parseSupabaseRequest(url, method);
 
   try {
     const res = await originalFetch.apply(this, arguments);
@@ -140,11 +144,12 @@ window.fetch = async function (input, init) {
       status: res.status,
       duration: performance.now() - start,
       backend: parseRoute(res.headers.get('X-Feel-Route')),
+      supabase,
       stack,
     });
     return res;
   } catch (err) {
-    record({ method, url, status: 0, error: err.message, duration: performance.now() - start, backend: null, stack });
+    record({ method, url, status: 0, error: err.message, duration: performance.now() - start, backend: null, supabase, stack });
     throw err;
   }
 };
@@ -162,12 +167,14 @@ XMLHttpRequest.prototype.send = function () {
   if (info && !isOwnRequest(info.url)) {
     const stack = captureStack();
     const start = performance.now();
+    const supabase = parseSupabaseRequest(info.url, info.method);
     this.addEventListener('loadend', () => {
       record({
         ...info,
         status: this.status,
         duration: performance.now() - start,
         backend: parseRoute(this.getResponseHeader('X-Feel-Route')),
+        supabase,
         stack,
       });
     });
