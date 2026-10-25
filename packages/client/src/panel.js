@@ -519,6 +519,7 @@ function renderRequest(req, count) {
   }
 
   const rows = [head, frontend, backend];
+  if (req.supabase) rows.push(renderSupabase(req.supabase));
   for (const q of req.backend?.queries ?? []) rows.push(renderQuery(q));
   // The backend left some out to keep its response header small.
   const hidden = req.backend?.truncated;
@@ -528,6 +529,29 @@ function renderRequest(req, count) {
   }
   if (req.changes?.length) rows.push(renderRequestChanges(req.changes));
   return el('div', { className: 'req' }, ...rows);
+}
+
+function renderSupabase(supabase) {
+  const row = el('div', { className: 'hop' }, el('span', { className: 'tag', textContent: 'Supabase' }));
+  row.append(
+    el('span', { textContent: `${supabase.operation} ` }),
+    el('button', {
+      className: 'db read',
+      textContent: supabase.table,
+      title: `Open ${supabase.table}`,
+      onclick: () => showTable(supabase.table),
+    }),
+  );
+  if (supabase.columns.length) row.append(el('span', { className: 'muted', textContent: ` · ${supabase.columns.join(', ')}` }));
+  if (supabase.filters.length) {
+    row.append(
+      el('span', {
+        className: 'muted',
+        textContent: ` · ${supabase.filters.map(({ name, value }) => `${name}=${value}`).join(' · ')}`,
+      }),
+    );
+  }
+  return row;
 }
 
 // Changed: the exact rows this request inserted/updated/deleted (request → effect).
