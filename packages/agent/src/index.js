@@ -27,6 +27,7 @@ import { tablesInSql } from './sql.js';
 import { createDb } from './db.js';
 import { possibleCalls } from './static.js';
 import { setViteAliases } from './resolve.js';
+import { diagnose } from './diagnostics.js';
 
 export { parseCode, traverse, findComponent, functionName, findTopLevelFunction, boundNames } from './ast.js';
 export { resolveImport } from './resolve.js';
@@ -102,6 +103,9 @@ export function createAgentHandler({ root, projectRoot, getModule, locateFrame, 
   };
 
   const routes = {
+    async 'GET /diagnostics'() {
+      return diagnose({ root: rootDir, projectRoot: projectDir, configured: !!database, mysql: isMysql, probe: () => db.probe() });
+    },
     async 'GET /source'(q) {
       let abs = safePath(q.get('file'));
       let line = Number(q.get('line'));

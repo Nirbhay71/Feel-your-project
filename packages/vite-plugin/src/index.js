@@ -46,8 +46,13 @@ export default function feel(options = {}) {
 
     // Pre-bundle Shiki (the panel's highlighter, a dependency of @feel-dev/client)
     // up front; otherwise Vite discovers it on first use and reloads the page.
-    config() {
-      return { optimizeDeps: { include: ['@feel-dev/client > shiki'] } };
+    config(config) {
+      let axios = false;
+      try {
+        createRequire(path.resolve(config.root ?? process.cwd(), 'package.json')).resolve('axios');
+        axios = true;
+      } catch { /* axios is optional */ }
+      return { optimizeDeps: { include: ['@feel-dev/client > shiki', ...(axios ? ['axios'] : [])] } };
     },
 
     configResolved(config) {

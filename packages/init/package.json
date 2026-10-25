@@ -1,0 +1,12 @@
+{
+  "name": "@feel-dev/init",
+  "version": "0.2.1",
+  "description": "Set up Feel in React + Vite, Next.js and Express projects.",
+  "type": "module",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/Nirbhay71/Feel-your-project.git", "directory": "packages/init" },
+  "bin": { "feel-init": "./bin/feel-init.js" },
+  "files": ["bin", "src", "README.md", "LICENSE"],
+  "engines": { "node": ">=20.19" },
+  "dependencies": { "@babel/parser": "^7.26.0", "magic-string": "^0.30.0" }
+}

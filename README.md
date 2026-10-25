@@ -46,6 +46,18 @@ Every step opens the actual code. Calls a component *could* make but hasn't yet
 
 ## Quick start
 
+### Automatic setup
+
+From your app or workspace root:
+
+```bash
+npx @feel-dev/init
+```
+
+The command detects React + Vite, Next.js 16+ App Router and an optional Express backend. It previews edits and npm installs, preserves existing config and saves backups. Use `--dry-run` to preview only, or `--app apps/web --backend apps/api` to select workspace packages. Other package managers can use `--no-install` and install the listed dependencies themselves. [Setup command details](packages/init/README.md).
+
+After restarting the dev server, Alt + right-click a component and expand **Setup checks**. It reports agent availability, frontend compatibility, observed backend instrumentation and SQL, and an optional read-only Postgres connection check. No database connection is needed for component/API tracing.
+
 ### React + Vite
 
 ```bash

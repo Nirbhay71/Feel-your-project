@@ -7,13 +7,19 @@ built to be careful:
 
 - Only source files (`.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`) inside your
   project folder are ever read — never `.env`, config or files in
-  `node_modules`. The one exception is your Prisma schema (`.prisma`), read
-  only for model → table names, and never sent to the browser.
+  `node_modules`. Prisma schemas (`.prisma`) are read only for model → table
+  names and are never sent to the browser. Setup diagnostics also read package
+  manifests and installed package version metadata; they return capability
+  summaries, not file contents, database URLs or underlying connection errors.
 - Requests to Feel from other websites open in the same browser are refused
   (origin check), and anything that changes state needs a header other sites
   can't send.
 - Database access is read-only, except "Turn on change tracking", which you
   click yourself; table names are always quoted.
+- The setup command inspects manifests and source config syntax without
+  executing project config or reading `.env`. It previews changes, saves
+  backups and refuses edits outside the selected project. Dynamic configs
+  it cannot edit safely receive manual instructions.
 
 ## Reporting a vulnerability
 

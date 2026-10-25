@@ -31,6 +31,7 @@ packages/
                 static "possible calls", import resolution, SQL parsing, Postgres inspection
   node/         Backend: Express, Next route handler, pg, mysql2 and Drizzle instrumentation
                 (X-Feel-Route header, per-request context)
+  init/         Interactive setup CLI: detection, syntax edits, preview and backups
 demo/           React + Express + Postgres app that exercises every supported pattern
 tests/          node:test suites; tests/fixtures/ holds small apps to analyse
   e2e/          opt-in end-to-end tests (real next dev + browser), skipped by npm test
@@ -51,7 +52,10 @@ Each file starts with a comment explaining its job — start there.
 
 These checks need Chromium, but no database. CI runs them in a separate job.
 They cover graph visibility before table metadata arrives, mode switching,
-analysis failure and retry, and Supabase table links when the database is offline.
+analysis failure and retry, Supabase table links when the database is offline,
+and the setup diagnostics panel. Each run starts with a fresh optimizer cache.
+On CI failure, the browser job uploads `test-results/` screenshots and fixture
+request/frame summaries as an artifact.
 
 ```bash
 npx playwright install --no-shell chromium

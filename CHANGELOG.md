@@ -2,6 +2,13 @@
 
 ## 0.2.1 — Unreleased
 
+- Added `@feel-dev/init`: stack/workspace detection, preview and confirmation,
+  safe config/instrumentation edits, backups, dry runs and repeat-run protection.
+- Added **Setup checks** to the panel: agent, React compatibility, observed
+  backend metadata and SQL, Prisma engine limitations, and a read-only database probe.
+- Vite pre-bundles the optional Axios integration to prevent a startup reload
+  from discarding captured requests. Browser checks use a fresh cache and save
+  screenshots and request/frame summaries for failed CI jobs.
 - Graph mode renders immediately and loads optional table details afterward,
   with bounded agent and database waits. Analysis failures show a retry action.
 - Supabase table requests (including count-only HEAD reads) and requests without

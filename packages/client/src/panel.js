@@ -19,6 +19,7 @@
 import { getRequests, onRequestsChange, findRequest, agentUrl } from './network.js';
 import { buildGraph, renderGraph, GRAPH_CSS } from './graph.js';
 import { agentJson } from './agent-request.js';
+import { runtimeChecks } from './diagnostics.js';
 
 const host = document.createElement('feel-panel');
 const shadow = host.attachShadow({ mode: 'open' });
@@ -118,6 +119,14 @@ shadow.innerHTML = `
     .audit-off { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 
     .code { flex: 1; overflow: auto; }
+    .diagnostics { padding: 6px 16px; border-bottom: 1px solid #3a4048; }
+    .diagnostics summary { cursor: pointer; color: #b1bac4; }
+    .checks { max-height: 220px; overflow: auto; }
+    .check { padding: 6px 0; }
+    .check b { color: #e1e4e8; }
+    .check p { margin: 2px 0; color: #959da5; }
+    .check[data-status="error"] b, .check[data-status="warning"] b { color: #ffab70; }
+    .check[data-status="ok"] b { color: #85e89d; }
     .status-msg { padding: 16px; color: #959da5; }
     pre { margin: 0; padding: 8px 0; font: 12.5px/1.6 ui-monospace, Consolas, monospace; background: transparent !important; }
     .line { display: inline-block; min-width: 100%; padding-right: 16px; }
@@ -135,6 +144,7 @@ shadow.innerHTML = `
       <button class="close" title="Close (Esc)">✕</button>
     </header>
     <nav></nav>
+    <details class="diagnostics"><summary>Setup checks</summary><div class="checks" aria-live="polite"></div></details>
     <div class="flow"></div>
     <div class="code"></div>
   </div>
@@ -147,6 +157,34 @@ const titleFile = shadow.querySelector('.title code');
 const nav = shadow.querySelector('nav');
 const flowBox = shadow.querySelector('.flow');
 const codeBox = shadow.querySelector('.code');
+const diagnosticsBox = shadow.querySelector('.diagnostics');
+const checksBox = shadow.querySelector('.checks');
+let diagnosticsResult = null;
+let diagnosticsToken;
+
+function renderChecks(checks) {
+  checksBox.replaceChildren(...checks.map((check) => {
+    const row = el('div', { className: 'check' }, el('b', { textContent: `${check.label} · ${check.status}` }), el('p', { textContent: check.message }));
+    row.dataset.status = check.status;
+    return row;
+  }), el('button', { textContent: 'Refresh checks', onclick: checkSetup }));
+}
+
+async function checkSetup() {
+  const token = (diagnosticsToken = {});
+  checksBox.textContent = 'Checking setup…';
+  try {
+    const result = await agentJson(agentUrl('diagnostics'), { timeout: 12000 });
+    if (token !== diagnosticsToken) return;
+    diagnosticsResult = result;
+    renderChecks([...result.checks, ...runtimeChecks(getRequests())]);
+  } catch {
+    if (token !== diagnosticsToken) return;
+    diagnosticsResult = null;
+    renderChecks([{ id: 'agent', label: 'Feel agent', status: 'error', message: 'The agent is unavailable. Check the dev server, Feel configuration and agent route, then refresh checks.' }]);
+  }
+}
+diagnosticsBox.addEventListener('toggle', () => { if (diagnosticsBox.open) checkSetup(); });
 
 // chain:  component chain from the page
 // index:  which chain entry the data-flow section is showing
@@ -177,6 +215,7 @@ export function isInPanel(event) {
 // the table view if one is open (its "recent changes" may have grown).
 onRequestsChange(() => {
   if (!current) return;
+  if (diagnosticsBox.open && diagnosticsResult) renderChecks([...diagnosticsResult.checks, ...runtimeChecks(getRequests())]);
   renderFlow();
   if (current.shown?.table) showTable(current.shown.table);
 });

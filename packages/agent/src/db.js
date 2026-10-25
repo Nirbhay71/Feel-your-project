@@ -138,7 +138,8 @@ export function createDb(connectionString) {
     return { tables: rows.map((r) => r.table_name) };
   }
 
-  return { getTable, enableAudit, changesForRequest };
+  const probe = async () => { await pool.query({ text: 'SELECT 1', query_timeout: 3000 }); };
+  return { getTable, enableAudit, changesForRequest, probe };
 }
 
 // The audit table and trigger function. Safe to run again: it upgrades an
