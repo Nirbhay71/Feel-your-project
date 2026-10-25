@@ -35,6 +35,10 @@ test('excludes PostgREST modifiers from filters', () => {
   assert.deepEqual(request?.filters, [{ name: 'name', value: 'eq.Ada' }]);
 });
 
+test('count-only HEAD requests are Supabase reads', () => {
+  assert.equal(parseSupabaseRequest('https://project.supabase.co/rest/v1/users?select=*', 'HEAD')?.operation, 'select');
+});
+
 test('rejects non-Supabase requests and unsupported methods', () => {
   assert.equal(parseSupabaseRequest('https://example.com/rest/v1/users?select=id', 'GET'), null);
   assert.equal(parseSupabaseRequest('https://supabase.co/rest/v1/users?select=id', 'GET'), null);

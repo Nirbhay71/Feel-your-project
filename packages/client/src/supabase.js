@@ -1,5 +1,6 @@
 const OPERATIONS = {
   GET: 'select',
+  HEAD: 'select',
   POST: 'insert',
   PATCH: 'update',
   DELETE: 'delete',

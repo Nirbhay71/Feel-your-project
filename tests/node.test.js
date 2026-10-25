@@ -1,6 +1,7 @@
 // @feel-dev/node against a real Express server: the X-Feel-Route header must name
 // the route, the handler's registration file:line and a unique request id.
 import { test } from 'node:test';
+import { localFetch as fetch } from './helpers/http.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';

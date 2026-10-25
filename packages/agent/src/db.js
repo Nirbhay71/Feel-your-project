@@ -11,7 +11,7 @@ const SCHEMA = 'public';
 const RECENT = 15;
 
 export function createDb(connectionString) {
-  const pool = new pg.Pool({ connectionString, max: 2 });
+  const pool = new pg.Pool({ connectionString, max: 2, connectionTimeoutMillis: 3000, query_timeout: 10000 });
 
   async function tableExists(name) {
     const { rowCount } = await pool.query(

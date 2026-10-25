@@ -4,6 +4,7 @@
 // (the "record once" rule depends on real mysql2 stacks). Each query must
 // land in X-Feel-Route once, with the line of *your* code that asked for it.
 import { test } from 'node:test';
+import { localFetch as fetch } from './helpers/http.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';

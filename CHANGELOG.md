@@ -1,7 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 — Unreleased
 
+- Graph mode renders immediately and loads optional table details afterward,
+  with bounded agent and database waits. Analysis failures show a retry action.
+- Supabase table requests (including count-only HEAD reads) and requests without
+  backend instrumentation remain visible in Graph mode.
+- Static analysis follows destructured callbacks from custom context hooks to
+  a single provider defined in the same module, including renamed hooks and callbacks.
+- Empty graphs retain the selected component and explain detection limits.
+- CI runs Chromium checks for graph visibility, slow/offline table details,
+  mode switching, retry recovery and Supabase table links without a database.
+- Local HTTP tests avoid browser-style blocked-port restrictions. Compatible
+  dependency updates address the findings reported by npm audit.
 - MySQL prepared statements made with `connection.prepare()` now record SQL,
   caller location, timing and row counts through callback and promise APIs.
   Cached statements are patched once, including across pooled requests.

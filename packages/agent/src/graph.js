@@ -14,6 +14,7 @@
 
 import { functionName, findTopLevelFunction } from './ast.js';
 import { loadFile, refTarget } from './files.js';
+import { contextFunctions } from './context-functions.js';
 
 const MAX_DEPTH = 5;
 
@@ -24,9 +25,17 @@ export async function reachableFunctions(abs, name, display) {
 
   const nodes = await collectFunctions(abs, fn);
   const key = (n) => `${display(n.file)}#${n.name}`;
+  // Runtime frames identify a nested provider callback by its top-level
+  // provider. Keep that alias alongside the callback's precise static name.
+  const keys = (n) => {
+    let owner = n.fn;
+    while (owner.getFunctionParent()) owner = owner.getFunctionParent();
+    const name = functionName(owner);
+    return name && owner !== n.fn ? [key(n), `${display(n.file)}#${name}`] : [key(n)];
+  };
   return {
-    functions: nodes.map(key),
-    direct: nodes.filter((n) => n.parent === nodes[0]).map(key),
+    functions: [...new Set(nodes.flatMap(keys))],
+    direct: [...new Set(nodes.filter((n) => n.parent === nodes[0]).flatMap(keys))],
   };
 }
 
@@ -45,9 +54,9 @@ export async function collectFunctions(file, fn, maxDepth = MAX_DEPTH) {
   while (queue.length) {
     const [node, depth] = queue.shift();
     if (depth === 0) continue;
-    for (const t of referencedFunctions(node.fn, node.file)) {
+    for (const t of [...referencedFunctions(node.fn, node.file), ...await contextFunctions(node.fn, node.file)]) {
       const loaded = await loadFile(t.file).catch(() => null);
-      const target = loaded?.ast && findTopLevelFunction(loaded.ast, t.name);
+      const target = t.fn ?? (loaded?.ast && findTopLevelFunction(loaded.ast, t.name));
       if (!target) continue; // not a function (e.g. a data constant) — ignore
       const name = functionName(target) ?? t.name;
       const key = `${t.file}#${name}`;

@@ -3,6 +3,7 @@
 // real. Each query must land in X-Feel-Route with the line of *your* code
 // that asked for it — even though the ORM sends it later, from its own code.
 import { test } from 'node:test';
+import { localFetch as fetch } from './helpers/http.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

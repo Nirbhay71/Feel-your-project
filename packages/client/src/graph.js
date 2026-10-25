@@ -78,7 +78,30 @@ export function buildGraph({ entry, requests, possible = [], tableInfo }) {
     }
 
     const b = req.backend;
-    if (!b) continue;
+    if (req.supabase) {
+      const s = req.supabase;
+      // Keep projects separate: two Supabase projects may expose the same table.
+      const origin = new URL(req.url, 'http://localhost').origin;
+      const route = node(`supabase:${origin}:${s.operation}:${s.table}`, {
+        kind: 'route', label: `Supabase ${s.operation}`, sub: s.table,
+      });
+      route.error = req.status === 0 || req.status >= 400;
+      edge(prev, route);
+      const table = node(`table:${s.table}`, { kind: 'table', label: s.table, action: { table: s.table } });
+      const access = s.operation === 'select' ? 'read' : 'write';
+      if (access === 'write') table.write = true;
+      edge(route, table, access);
+      if (!b) continue;
+    }
+    if (!b) {
+      const route = node(`request:${req.method} ${req.url}`, {
+        kind: 'route', label: `${req.method} ${req.url}`,
+        sub: `${req.status || 'failed'} · ${Math.round(req.duration)} ms`,
+        error: req.status === 0 || req.status >= 400,
+      });
+      edge(prev, route);
+      continue;
+    }
 
     // API route
     const route = node(`route:${b.method} ${b.path}`, { kind: 'route', label: `${b.method} ${b.path}` });

@@ -7,7 +7,7 @@ down to the line of code, the API route, the backend handler, the SQL and the ta
 [![npm](https://img.shields.io/npm/v/@feel-dev/vite-plugin)](https://www.npmjs.com/package/@feel-dev/vite-plugin)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Works with **React on Vite or Next.js**, **Express**, **Postgres or MySQL**, **Prisma** and **Drizzle**.
+Works with **React on Vite or Next.js**, **Express**, **Postgres or MySQL**, **Prisma**, **Drizzle** and **Supabase REST requests**.
 Dev only, two-minute setup, nothing added to production.
 
 ![Feel demo: Alt + right-click a page, then follow the data flow from the component to the API and backend handler](docs/demo.gif)
@@ -105,6 +105,7 @@ Full guide: [packages/next/README.md](packages/next/README.md).
 |---|---|
 | Frontend | React 19 (dev mode) on Vite — tested with Vite 7 and 8 — or on **Next.js** App Router (16+; Turbopack or webpack) |
 | Data fetching | `fetch`, axios, `axios.create` instances (incl. interceptors), wrapper functions, custom hooks, API objects (`userApi.getAll()`), React Query, SWR |
+| Supabase | Hosted `*.supabase.co/rest/v1/<table>` requests through fetch/XHR: operations, columns and filters in List and Graph; table details with a connection to the same Postgres database |
 | Imports | relative, Vite `resolve.alias`, tsconfig/jsconfig `paths` + `baseUrl`, `package.json` `"imports"` |
 | Backend | Express 4 and 5 — ES modules or CommonJS, routers, `app.use` mounts, controllers; Next.js Route Handlers (`app/**/route.ts`) and Pages Router API routes (`pages/api/**`) |
 | Database | Postgres: queries per request, tables, structure, change history — through `pg`, **Prisma** (7, or 6 with `@prisma/adapter-pg`) or **Drizzle** (`drizzle-orm/node-postgres`) |
@@ -120,7 +121,7 @@ Full guide: [packages/next/README.md](packages/next/README.md).
 - **SQLite** — the static side understands Drizzle's SQLite tables, the runtime side doesn't yet
 - **Next.js beyond Route Handlers**: Server Actions, data fetched inside Server Components, `middleware.ts` / `proxy.ts`, the edge runtime, `output: 'export'`, and Next before 16 (Server Components still get their DOM tags; a Server Component that renders a client one isn't in its chain)
 - Create React App, Vue, Svelte — Feel needs React on Vite or Next.js today
-- **Supabase** (browser talks to the database directly)
+- **Supabase beyond hosted table requests**: static `.from()` detection, RPC, custom domains and self-hosted endpoints
 - React 18 and older show a simpler, DOM-based component chain
 
 Want one of these? See [CONTRIBUTING.md](CONTRIBUTING.md) — PRs very welcome.
@@ -144,6 +145,10 @@ npm run demo    # API :3001 + app :5173
 ```
 
 ## Troubleshooting
+
+**Graph mode looks empty or incomplete.** Interact with the selected component, or select a parent in the component chain. Graph mode shows the component even when no calls are detected. Static analysis follows callbacks returned by a custom context hook when its module contains one clear provider with an object-literal value. Dynamic values, multiple providers and context/provider definitions split across modules may remain unresolved.
+
+**The agent is unavailable or table details do not load.** Check the dev server and use **Retry** if analysis failed. Table details load separately from the graph; a slow or unreachable database does not hide the data flow. A database connection is optional for component, request, handler and SQL nodes.
 
 **`npm install` reports `ERESOLVE` for Next.js.** `@feel-dev/next` needs Next.js 16 or newer.
 Upgrade the app with `npx @next/codemod@canary upgrade latest`, then install again.

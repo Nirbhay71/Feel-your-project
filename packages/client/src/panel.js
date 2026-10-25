@@ -18,6 +18,7 @@
 
 import { getRequests, onRequestsChange, findRequest, agentUrl } from './network.js';
 import { buildGraph, renderGraph, GRAPH_CSS } from './graph.js';
+import { agentJson } from './agent-request.js';
 
 const host = document.createElement('feel-panel');
 const shadow = host.attachShadow({ mode: 'open' });
@@ -213,7 +214,23 @@ async function renderFlow() {
   if (!current) return;
   const entry = current.chain[current.index];
   const token = (renderFlow.token = {});
-  const [reach, possible] = await Promise.all([fetchReach(entry), fetchPossible(entry)]);
+  panel.classList.toggle('wide', flowMode === 'graph');
+  current.applyZoom = null;
+  flowBox.replaceChildren(renderFlowHeader(), el('div', { className: 'empty', textContent: 'Loading data flow…' }));
+  let reach, possible;
+  try {
+    [reach, possible] = await Promise.all([fetchReach(entry), fetchPossible(entry)]);
+  } catch (err) {
+    if (renderFlow.token !== token || !current) return;
+    const retry = el('button', { textContent: 'Retry', onclick: () => {
+      const key = `${entry.file}#${entry.component}`;
+      reachCache.delete(key);
+      possibleCache.delete(key);
+      renderFlow();
+    } });
+    flowBox.replaceChildren(renderFlowHeader(), el('div', { className: 'empty', textContent: err.message }), retry);
+    return;
+  }
   if (renderFlow.token !== token || !current) return; // superseded meanwhile
 
   // Group identical calls (same method + url + call path) and keep the latest.
@@ -236,9 +253,10 @@ async function renderFlow() {
 
   current.applyZoom = null;
   if (!groups.size && !unseen.length) {
-    content.push(el('div', { className: 'empty', textContent: 'No API calls from this component.' }));
+    content.push(el('div', { className: 'empty', textContent: 'No API calls detected yet. Try interacting with this component or selecting a parent component. Calls through context or dynamically supplied functions may not be detected.' }));
+    if (graphMode) content.push(renderGraphView(entry, [], [], token));
   } else if (graphMode) {
-    content.push(await renderGraphView(entry, [...groups.values()], unseen));
+    content.push(renderGraphView(entry, [...groups.values()], unseen, token));
     if (renderFlow.token !== token || !current) return;
   } else {
     if (!groups.size) content.push(el('div', { className: 'empty', textContent: 'No API calls seen yet.' }));
@@ -257,6 +275,7 @@ async function renderFlow() {
   }
 
   flowBox.replaceChildren(renderFlowHeader(), ...content);
+  current.applyZoom?.();
 }
 
 // Is this runtime request the same call as a static one?
@@ -314,10 +333,7 @@ function fetchPossible({ file, component }) {
   const hit = possibleCache.get(key);
   if (hit && Date.now() - hit.at < 5000) return hit.promise;
   const q = new URLSearchParams({ file, component });
-  const promise = fetch(agentUrl(`possible?${q}`))
-    .then((res) => (res.ok ? res.json() : { calls: [] }))
-    .then((body) => body.calls)
-    .catch(() => []);
+  const promise = agentJson(agentUrl(`possible?${q}`)).then((body) => body.calls ?? []);
   possibleCache.set(key, { at: Date.now(), promise });
   return promise;
 }
@@ -343,30 +359,22 @@ function renderFlowHeader() {
 
 let flowMode = 'list';
 try {
-  flowMode = localStorage.getItem('feel:flowMode') ?? 'list';
+  flowMode = localStorage.getItem('feel:flowMode') === 'graph' ? 'graph' : 'list';
 } catch {
   // storage blocked — default to list
 }
 
 // Graph mode: fetch table details (for related tables + recent changes),
 // build the graph and render it. Clicking a node opens its code or table.
-async function renderGraphView(entry, groups, possible) {
+function renderGraphView(entry, groups, possible, token) {
   const tables = new Set();
+  for (const { req } of groups) if (req.supabase) tables.add(req.supabase.table);
   for (const { req } of groups) for (const q of req.backend?.queries ?? []) for (const t of q.tables ?? []) tables.add(t.name);
   for (const c of possible) for (const q of c.route?.queries ?? []) for (const t of q.tables) tables.add(t.name);
 
   const tableInfo = new Map();
-  await Promise.all([...tables].map(async (name) => tableInfo.set(name, await fetchTableInfo(name))));
-  // One more hop, so related tables also show their row count / changes.
-  const related = new Set();
-  for (const info of tableInfo.values()) {
-    info?.references.forEach((f) => related.add(f.to_table));
-    info?.referencedBy.forEach((f) => related.add(f.from_table));
-  }
-  await Promise.all([...related].filter((n) => !tableInfo.has(n)).map(async (name) => tableInfo.set(name, await fetchTableInfo(name))));
-
-  const model = buildGraph({ entry, requests: groups.map((g) => ({ req: g.req, frames: g.owned })), possible, tableInfo });
-  const graph = renderGraph(model, {
+  const metadataStatus = el('div', { className: 'empty', textContent: tables.size ? 'Loading table details…' : '' });
+  const draw = () => renderGraph(buildGraph({ entry, requests: groups.map((g) => ({ req: g.req, frames: g.owned })), possible, tableInfo }), {
     activeKey: current.graphActive,
     onSelect: (n) => {
       current.graphActive = n.key;
@@ -379,11 +387,12 @@ async function renderGraphView(entry, groups, possible) {
 
   // Zoom: the graph is drawn at full size and scaled with a CSS transform.
   // The wrapper gets the scaled size, so scrollbars match what you see.
+  let graph = draw();
   const scaler = el('div', { className: 'graph-scaler' }, graph);
-  const width = parseFloat(graph.style.width);
-  const height = parseFloat(graph.style.height);
   const applyZoom = () => {
     const available = flowBox.clientWidth - 32; // minus .flow padding
+    const width = parseFloat(graph.style.width);
+    const height = parseFloat(graph.style.height);
     // "Fit" never goes below 70% — smaller than that is unreadable; scroll instead.
     const scale = current.graphZoom === 'fit' ? Math.max(0.7, Math.min(1, available / width)) : current.graphZoom;
     graph.style.transform = `scale(${scale})`;
@@ -407,9 +416,32 @@ async function renderGraphView(entry, groups, possible) {
     el('button', { textContent: 'Fit', title: 'Fit to width', onclick: () => ((current.graphZoom = 'fit'), applyZoom()) }),
   );
   current.applyZoom = applyZoom; // re-run when the panel is resized (see below)
-  queueMicrotask(applyZoom);
+  // Enrich an already visible graph. A slow/offline database must never
+  // hide the component, request, handler or SQL nodes we already have.
+  const active = () => current && renderFlow.token === token && flowMode === 'graph';
+  const enrich = async () => {
+    await Promise.all([...tables].map(async (name) => tableInfo.set(name, await fetchTableInfo(name))));
+    if (!active()) return;
+    metadataStatus.textContent = [...tables].some((name) => !tableInfo.get(name)) ? 'Some table details are unavailable. The data-flow graph is still available.' : '';
+    const related = new Set();
+    for (const info of tableInfo.values()) {
+      info?.references.forEach((f) => related.add(f.to_table));
+      info?.referencedBy.forEach((f) => related.add(f.from_table));
+    }
+    graph = draw();
+    scaler.replaceChildren(graph);
+    applyZoom();
+    await Promise.all([...related].filter((n) => !tableInfo.has(n)).map(async (name) => tableInfo.set(name, await fetchTableInfo(name))));
+    if (!active()) return;
+    graph = draw();
+    scaler.replaceChildren(graph);
+    applyZoom();
+  };
+  if (tables.size) void enrich().catch(() => {
+    if (active()) metadataStatus.textContent = 'Table details are unavailable. The data-flow graph is still available.';
+  });
 
-  return el('div', {}, controls, el('div', { className: 'graph-scroll' }, scaler));
+  return el('div', {}, controls, metadataStatus, el('div', { className: 'graph-scroll' }, scaler));
 }
 
 // "Fit" depends on the panel's width, which changes with the window.
@@ -421,8 +453,7 @@ const tableCache = new Map(); // name → { at, promise }
 function fetchTableInfo(name) {
   const hit = tableCache.get(name);
   if (hit && Date.now() - hit.at < 2000) return hit.promise;
-  const promise = fetch(agentUrl(`db/table?name=${encodeURIComponent(name)}`))
-    .then((res) => (res.ok ? res.json() : null))
+  const promise = agentJson(agentUrl(`db/table?name=${encodeURIComponent(name)}`), { timeout: 3000 })
     .catch(() => null);
   tableCache.set(name, { at: Date.now(), promise });
   return promise;
@@ -788,8 +819,7 @@ async function fetchReach({ file, component }) {
   const key = `${file}#${component}`;
   if (!reachCache.has(key)) {
     const q = new URLSearchParams({ file, component });
-    const res = await fetch(agentUrl(`reach?${q}`));
-    const body = res.ok ? await res.json() : {};
+    const body = await agentJson(agentUrl(`reach?${q}`));
     reachCache.set(key, { functions: new Set(body.functions), direct: new Set(body.direct) });
   }
   return reachCache.get(key);

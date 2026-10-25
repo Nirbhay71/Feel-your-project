@@ -47,6 +47,19 @@ Each file starts with a comment explaining its job — start there.
 3. If it's user-visible, try it in the demo (or add the pattern to the demo).
 4. `npm test` must pass — CI runs it on Linux and Windows, Node 20 and 22.
 
+### Graph browser checks
+
+These checks need Chromium, but no database. CI runs them in a separate job.
+They cover graph visibility before table metadata arrives, mode switching,
+analysis failure and retry, and Supabase table links when the database is offline.
+
+```bash
+npx playwright install --no-shell chromium
+```
+
+Run `FEEL_BROWSER_E2E=1 npm run test:browser` on macOS/Linux, or
+`$env:FEEL_BROWSER_E2E='1'; npm run test:browser` in PowerShell.
+
 ### The Next.js end-to-end test
 
 `tests/e2e/next.e2e.test.js` runs a real `next dev` on a copy of

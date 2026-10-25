@@ -5,6 +5,7 @@
 // startup, outside any request. Queries sent from a callback must still land
 // in the request that sent the first one, never in another request.
 import { test } from 'node:test';
+import { localFetch as fetch } from './helpers/http.js';
 import assert from 'node:assert/strict';
 import { AsyncResource } from 'node:async_hooks';
 import express from 'express';

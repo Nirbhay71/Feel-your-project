@@ -3,6 +3,7 @@
 // by Host), same origin, X-Feel on POSTs — and "Open in editor" through
 // Next's own endpoint.
 import { test } from 'node:test';
+import { localFetch as fetch } from './helpers/http.js';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import path from 'node:path';

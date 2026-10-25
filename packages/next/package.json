@@ -1,6 +1,6 @@
 {
   "name": "@feel-dev/next",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Feel for Next.js: Alt + right-click any UI element to see the full stack behind it — component → frontend code → route handler → SQL → tables.",
   "keywords": [
     "nextjs",
@@ -56,9 +56,9 @@
     "node": ">=20.19"
   },
   "dependencies": {
-    "@feel-dev/agent": "^0.2.0",
-    "@feel-dev/client": "^0.2.0",
-    "@feel-dev/node": "^0.2.0",
+    "@feel-dev/agent": "^0.2.1",
+    "@feel-dev/client": "^0.2.1",
+    "@feel-dev/node": "^0.2.1",
     "@jridgewell/trace-mapping": "^0.3.31",
     "magic-string": "^0.30.0"
   },
