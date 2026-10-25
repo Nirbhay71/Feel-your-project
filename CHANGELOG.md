@@ -2,6 +2,8 @@
 
 ## 0.2.1 — Unreleased
 
+- Exclude Feel's own client frames when Vite serves workspace packages through
+  `/@fs/` URLs, keeping runtime requests connected to their component graphs on Linux.
 - Added `@feel-dev/init`: stack/workspace detection, preview and confirmation,
   safe config/instrumentation edits, backups, dry runs and repeat-run protection.
 - Added **Setup checks** to the panel: agent, React compatibility, observed

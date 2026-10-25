@@ -71,6 +71,13 @@ export default function feel(options = {}) {
     configureServer(server) {
       const getModule = async (url) => {
         const mod = await server.moduleGraph.getModuleByUrl(url);
+        // Workspace links are served as /@fs/.../packages/client/src/...,
+        // without node_modules in the URL. They are still our tooling, not
+        // application frames: keeping them stops request ownership at fetch.
+        if (mod?.file) {
+          const relative = path.relative(path.dirname(CLIENT_FILE), mod.file);
+          if (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative)) return null;
+        }
         return mod && { file: mod.file, map: mod.transformResult?.map };
       };
       server.middlewares.use(AGENT_ROUTE, createAgent({ root, projectRoot: options.projectRoot, getModule, database: options.database, aliases }));
