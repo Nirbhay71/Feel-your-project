@@ -29,6 +29,10 @@ const MAX_SQL = 2000; // characters
 // are remembered here and recognised by identity.
 const handedOn = new WeakSet();
 
+// mysql2 returns the same cached statement on repeated prepare() calls,
+// including when a pooled connection is reused by a later request.
+const preparedStatements = new WeakSet();
+
 // pool.execute() passes plain arguments, so it's recognised by the file that
 // makes the call instead. The exact file matters, not just "somewhere in
 // mysql2": the promise wrappers (lib/promise/*) and beginTransaction()
@@ -51,6 +55,7 @@ export function instrumentMysql2(mysql2) {
     patch(poolProto, name, { pool: true });
     patch(connProto, name, { pool: false });
   }
+  patchPrepare(owner(mysql2.Connection?.prototype, 'prepare'));
   patchGetConnection(owner(mysql2.Pool?.prototype, 'getConnection'));
 }
 
@@ -75,6 +80,35 @@ function patchGetConnection(proto) {
   };
 }
 
+function patchPrepare(proto) {
+  const original = proto?.prepare;
+  if (typeof original !== 'function') return;
+
+  proto.prepare = function (options, callback) {
+    if (typeof callback !== 'function') return original.apply(this, arguments);
+    return original.call(
+      this,
+      options,
+      bindToRequest(function (err, statement) {
+        if (!err && statement) patchPreparedStatement(statement);
+        return callback.apply(this, arguments);
+      }),
+    );
+  };
+}
+
+function patchPreparedStatement(statement) {
+  if (preparedStatements.has(statement)) return;
+  const original = statement.execute;
+  if (typeof original !== 'function') return;
+  preparedStatements.add(statement);
+
+  statement.execute = function (...args) {
+    const ctx = als.getStore();
+    return ctx ? run(this, original, args, ctx, false, statement.query) : original.apply(this, args);
+  };
+}
+
 function patch(proto, name, { pool }) {
   const original = proto[name];
   if (typeof original !== 'function') return;
@@ -91,9 +125,9 @@ function patch(proto, name, { pool }) {
 // Inside a request: record the query (unless it's a repeat or over the cap)
 // and bind its callback or events to the request — always, recorded or not,
 // since queries sent from that callback depend on it.
-function run(self, original, args, ctx, pool) {
+function run(self, original, args, ctx, pool, preparedSql) {
   // Read it now: Connection.query overwrites cmd.sql with the formatted SQL.
-  const sql = sqlOf(args[0]);
+  const sql = preparedSql ?? sqlOf(args[0]);
 
   // Record it now, while the caller's line is still on the stack. Cheapest
   // checks first — the stack is only read for connection calls. Queries
@@ -108,7 +142,8 @@ function run(self, original, args, ctx, pool) {
   // Time it through the callback (the promise API passes one too). Never
   // add a callback where there was none: without one, mysql2 reports
   // errors differently (events, or throwing for pool.execute).
-  const i = typeof args[1] === 'function' ? 1 : typeof args[2] === 'function' ? 2 : -1;
+  // A prepared statement also accepts execute(callback), with no SQL argument.
+  const i = typeof args[0] === 'function' ? 0 : typeof args[1] === 'function' ? 1 : typeof args[2] === 'function' ? 2 : -1;
   if (i >= 0) args[i] = wrapCallback(bindToRequest(args[i]), entry, done);
 
   let result;

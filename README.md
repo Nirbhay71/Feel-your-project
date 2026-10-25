@@ -108,7 +108,7 @@ Full guide: [packages/next/README.md](packages/next/README.md).
 | Imports | relative, Vite `resolve.alias`, tsconfig/jsconfig `paths` + `baseUrl`, `package.json` `"imports"` |
 | Backend | Express 4 and 5 — ES modules or CommonJS, routers, `app.use` mounts, controllers; Next.js Route Handlers (`app/**/route.ts`) and Pages Router API routes (`pages/api/**`) |
 | Database | Postgres: queries per request, tables, structure, change history — through `pg`, **Prisma** (7, or 6 with `@prisma/adapter-pg`) or **Drizzle** (`drizzle-orm/node-postgres`) |
-| | **MySQL / MariaDB**: queries per request, tables, timing and the line in your code — through `mysql2` (callbacks or `mysql2/promise`, pools, `getConnection`, transactions) or **Drizzle** (`drizzle-orm/mysql2`) |
+| | **MySQL / MariaDB**: queries per request, tables, timing and the line in your code — through `mysql2` (callbacks or `mysql2/promise`, pools, `getConnection`, transactions, prepared statements) or **Drizzle** (`drizzle-orm/mysql2`) |
 | Other ORMs on `pg` | Knex, Sequelize, TypeORM, …: SQL and tables per request; the line in your code when the ORM keeps it on the stack |
 | Layout | frontend and backend in one folder or side by side (`client/` + `server/`) |
 
@@ -116,7 +116,7 @@ Full guide: [packages/next/README.md](packages/next/README.md).
 
 - **Prisma's Rust engine** (Prisma 6 and older without a driver adapter) — its queries don't go through `pg`
 - **MySQL table view and change history** — MySQL queries and tables show per request, but the table view is Postgres only
-- **Other MySQL paths**: the `mysql` and `mariadb` drivers, Prisma on MySQL, and prepared statements made with `connection.prepare()`; `PoolCluster` is best effort (a query's line may be missing)
+- **Other MySQL paths**: the `mysql` and `mariadb` drivers, and Prisma on MySQL; `PoolCluster` is best effort (a query's line may be missing)
 - **SQLite** — the static side understands Drizzle's SQLite tables, the runtime side doesn't yet
 - **Next.js beyond Route Handlers**: Server Actions, data fetched inside Server Components, `middleware.ts` / `proxy.ts`, the edge runtime, `output: 'export'`, and Next before 16 (Server Components still get their DOM tags; a Server Component that renders a client one isn't in its chain)
 - Create React App, Vue, Svelte — Feel needs React on Vite or Next.js today

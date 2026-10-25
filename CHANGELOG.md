@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- MySQL prepared statements made with `connection.prepare()` now record SQL,
+  caller location, timing and row counts through callback and promise APIs.
+  Cached statements are patched once, including across pooled requests.
+
 ## 0.2.0 — "Sixth Sense"
 
 Feel now sees through ORMs, and works in Next.js.

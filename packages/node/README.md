@@ -8,7 +8,7 @@ Backend half of Feel (setup guide: `@feel-dev/vite-plugin`, or `@feel-dev/next` 
   also when an ORM sends them: **Prisma** (7, or 6 with `@prisma/adapter-pg`), **Drizzle**
   (`drizzle-orm/node-postgres`), and Knex, Sequelize, TypeORM, … on `pg`
 - the same for **MySQL / MariaDB** through `mysql2` — callbacks or `mysql2/promise`, pools,
-  `getConnection()`, transactions — and **Drizzle** (`drizzle-orm/mysql2`). `PoolCluster` is
+  `getConnection()`, transactions, `connection.prepare()` statements — and **Drizzle** (`drizzle-orm/mysql2`). `PoolCluster` is
   best effort: its queries show up, but the line may be missing
 - a request id, which Postgres change tracking uses to link row changes back to the request
   (MySQL connections aren't tagged — no extra SQL is sent, since the table view is Postgres only)
