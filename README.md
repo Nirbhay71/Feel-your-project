@@ -10,8 +10,7 @@ down to the line of code, the API route, the backend handler, the SQL and the ta
 Works with **React on Vite or Next.js**, **Express**, **Postgres or MySQL**, **Prisma** and **Drizzle**.
 Dev only, two-minute setup, nothing added to production.
 
-<!-- TODO: demo GIF here — Alt + right-click on a chart → the panel with the full stack
-![Feel demo](docs/demo.gif) -->
+![Feel demo: Alt + right-click a page, then follow the data flow from the component to the API and backend handler](docs/demo.gif)
 
 ## Why
 
