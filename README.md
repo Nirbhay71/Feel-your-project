@@ -158,6 +158,10 @@ before `react()` in the plugins list. In Next.js, use `next dev` and include the
 **The Next.js agent route returns 404.** Feel only serves the route under `next dev`. Check that
 `app/%5F%5Ffeel/[...path]/route.js` exports `GET` and `POST` from `@feel-dev/next/agent`.
 
+**No SQL in the panel (Express backend).** Put `import '@feel-dev/node/register';`
+(or `require('@feel-dev/node/register');` for CommonJS) as the first import in your server
+entry file, before anything that loads `pg` or `mysql2`. Restart the dev server afterward.
+
 **SQL is missing for Prisma.** Prisma 6 and older need a driver adapter for Feel to see Postgres
 queries, such as `@prisma/adapter-pg`. Prisma's Rust engine does not send queries through `pg`.
 
