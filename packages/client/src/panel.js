@@ -518,7 +518,9 @@ function renderRequest(req, count) {
     backend.append(el('span', { className: 'muted', textContent: 'not instrumented (add @feel-dev/node)' }));
   }
 
-  const rows = [head, frontend, backend];
+  const rows = [head, frontend];
+  // Supabase talks directly to PostgREST, so no Node instrumentation is needed.
+  if (req.backend || !req.supabase) rows.push(backend);
   if (req.supabase) rows.push(renderSupabase(req.supabase));
   for (const q of req.backend?.queries ?? []) rows.push(renderQuery(q));
   // The backend left some out to keep its response header small.

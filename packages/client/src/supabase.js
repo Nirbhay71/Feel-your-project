@@ -19,13 +19,22 @@ export function parseSupabaseRequest(url, method) {
   const operation = OPERATIONS[String(method).toUpperCase()];
   if (!match || !operation) return null;
 
+  // URL accepts malformed percent escapes; decoding them must never stop
+  // the fetch/XHR wrapper from sending the app's request.
+  let table;
+  try {
+    table = decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+
   const params = [...parsed.searchParams.entries()];
   const columns = parsed.searchParams.get('select')?.split(',').filter(Boolean) ?? [];
   const modifiers = new Set(['select', 'order', 'limit', 'offset', 'on_conflict']);
   const filters = params.filter(([name]) => !modifiers.has(name)).map(([name, value]) => ({ name, value }));
 
   return {
-    table: decodeURIComponent(match[1]),
+    table,
     columns,
     filters,
     operation,

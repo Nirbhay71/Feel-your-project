@@ -41,3 +41,10 @@ test('rejects non-Supabase requests and unsupported methods', () => {
   assert.equal(parseSupabaseRequest('https://project.supabase.co/rest/v1/users', 'PUT'), null);
   assert.equal(parseSupabaseRequest('/rest/v1/users?select=id', 'GET'), null);
 });
+
+test('malformed table encoding is ignored without throwing', () => {
+  for (const table of ['%ZZ', '%', '%E0%A4%A']) {
+    assert.equal(parseSupabaseRequest(`https://project.supabase.co/rest/v1/${table}`, 'GET'), null);
+  }
+  assert.equal(parseSupabaseRequest('https://project.supabase.co/rest/v1/order%20items', 'GET')?.table, 'order items');
+});
